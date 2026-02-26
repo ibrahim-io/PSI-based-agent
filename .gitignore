@@ -1,0 +1,23 @@
+# Gradle artifacts
+.gradle/
+build/
+out/
+
+# IntelliJ plugin sandbox
+.idea-sandbox/
+
+# IntelliJ IDEA project files (keep .idea/ if using VCS)
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Kotlin compilation output
+*.class
+
+# Log files
+*.log

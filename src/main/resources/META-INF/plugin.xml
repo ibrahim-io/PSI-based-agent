@@ -1,0 +1,17 @@
+<idea-plugin>
+    <id>io.github.ibrahimio.psi-agent</id>
+    <name>PSI Agent</name>
+    <vendor>Ibrahim</vendor>
+    <description>PSI-based code refactoring agent with AI integration</description>
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.java</depends>
+
+    <actions>
+        <action id="PSIAgent.RenameMethod"
+                class="io.github.ibrahimio.psiagent.actions.RenameMethodAction"
+                text="Rename Method (PSI Agent)"
+                description="Rename a method using PSI-based refactoring">
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+        </action>
+    </actions>
+</idea-plugin>
