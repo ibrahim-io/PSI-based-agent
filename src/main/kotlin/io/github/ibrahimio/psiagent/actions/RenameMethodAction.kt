@@ -40,6 +40,8 @@ class RenameMethodAction : AnAction() {
         if (newName.isBlank() || newName == currentName) return
 
         val filePath = psiFile.virtualFile?.path ?: return
+        // WriteCommandAction inside MethodRenamer handles its own write-thread synchronisation,
+        // so it is safe to call from a pooled thread.
         ApplicationManager.getApplication().executeOnPooledThread {
             val renamer = MethodRenamer(project)
             val result = renamer.renameMethod(filePath, currentName, newName)

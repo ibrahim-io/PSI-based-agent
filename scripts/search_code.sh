@@ -41,13 +41,15 @@ EOF
 }
 
 # Convert a shell glob pattern to an ERE regex
+# Escapes ERE metacharacters, then replaces glob wildcards (* and ?)
 glob_to_ere() {
     local pattern="$1"
-    # Escape regex metacharacters except * and ?
-    pattern="${pattern//./\\.}"
-    pattern="${pattern//\*/.*}"
-    pattern="${pattern//\?/.}"
-    echo "$pattern"
+    # Escape ERE metacharacters using sed (avoids bash expansion issues with braces)
+    # Then replace glob wildcards with their ERE equivalents
+    printf '%s' "$pattern" \
+        | sed 's/[\\.\[^$(){}|+]/\\&/g' \
+        | sed 's/\*/.*/' \
+        | sed 's/?/./'
 }
 
 search_methods() {
@@ -57,11 +59,15 @@ search_methods() {
     ere="$(glob_to_ere "$pattern")"
 
     echo "--- Method Definitions ---"
-    grep -rn --include="*.java" --include="*.kt" -E \
-        "(public|private|protected|internal|static|override|suspend|\s)+(fun\s+${ere}|[a-zA-Z<>\[\]?,\s]+\s+${ere})\s*\(" \
-        "$search_dir" 2>/dev/null \
-        | sed 's/^/  /' \
-        || echo "  (none found)"
+    local output
+    output="$(grep -rn --include="*.java" --include="*.kt" -E \
+        "(public|private|protected|static) [a-zA-Z<>?,]+ ${ere}[[:space:]]*\(|fun[[:space:]]+${ere}[[:space:]]*\(" \
+        "$search_dir" 2>/dev/null || true)"
+    if [[ -n "$output" ]]; then
+        echo "$output" | sed 's/^/  /'
+    else
+        echo "  (none found)"
+    fi
 }
 
 search_classes() {
@@ -71,11 +77,15 @@ search_classes() {
     ere="$(glob_to_ere "$pattern")"
 
     echo "--- Class / Interface / Object Definitions ---"
-    grep -rn --include="*.java" --include="*.kt" -E \
-        "(class|interface|enum|object|abstract class|data class)\s+${ere}(\s|<|\{|:)" \
-        "$search_dir" 2>/dev/null \
-        | sed 's/^/  /' \
-        || echo "  (none found)"
+    local output
+    output="$(grep -rn --include="*.java" --include="*.kt" -E \
+        "(class|interface|enum|object)[[:space:]]+${ere}([[:space:]]|<|\{|:|,|\()" \
+        "$search_dir" 2>/dev/null || true)"
+    if [[ -n "$output" ]]; then
+        echo "$output" | sed 's/^/  /'
+    else
+        echo "  (none found)"
+    fi
 }
 
 search_fields() {
@@ -85,11 +95,15 @@ search_fields() {
     ere="$(glob_to_ere "$pattern")"
 
     echo "--- Field / Property Definitions ---"
-    grep -rn --include="*.java" --include="*.kt" -E \
-        "(private|public|protected|internal|static|final|val|var)\s+.*\s+${ere}\s*[=;:]" \
-        "$search_dir" 2>/dev/null \
-        | sed 's/^/  /' \
-        || echo "  (none found)"
+    local output
+    output="$(grep -rn --include="*.java" --include="*.kt" -E \
+        "(private|public|protected|static|final|val|var)[[:space:]]+[a-zA-Z<>?,]+ ${ere}[[:space:]]*[=;:]|(val|var)[[:space:]]+${ere}[[:space:]]*[=:]" \
+        "$search_dir" 2>/dev/null || true)"
+    if [[ -n "$output" ]]; then
+        echo "$output" | sed 's/^/  /'
+    else
+        echo "  (none found)"
+    fi
 }
 
 search_usages() {
@@ -99,26 +113,32 @@ search_usages() {
     ere="$(glob_to_ere "$pattern")"
 
     echo "--- Usages / Call Sites ---"
-    # Match call expressions: pattern( or pattern . or .pattern
-    grep -rn --include="*.java" --include="*.kt" -E \
-        "(${ere}\s*\(|\.${ere}\s*\(|new\s+${ere}\s*\()" \
-        "$search_dir" 2>/dev/null \
-        | sed 's/^/  /' \
-        || echo "  (none found)"
+    local output
+    # Match call expressions: pattern( or .pattern(
+    output="$(grep -rn --include="*.java" --include="*.kt" -E \
+        "${ere}[[:space:]]*\(|\.${ere}[[:space:]]*\(" \
+        "$search_dir" 2>/dev/null || true)"
+    if [[ -n "$output" ]]; then
+        echo "$output" | sed 's/^/  /'
+    else
+        echo "  (none found)"
+    fi
 }
 
 search_all() {
     local pattern="$1"
     local search_dir="$2"
-    local ere
-    ere="$(glob_to_ere "$pattern")"
 
     echo "--- All Occurrences ---"
-    grep -rn --include="*.java" --include="*.kt" \
+    local output
+    output="$(grep -rn --include="*.java" --include="*.kt" \
         "$pattern" \
-        "$search_dir" 2>/dev/null \
-        | sed 's/^/  /' \
-        || echo "  (none found)"
+        "$search_dir" 2>/dev/null || true)"
+    if [[ -n "$output" ]]; then
+        echo "$output" | sed 's/^/  /'
+    else
+        echo "  (none found)"
+    fi
 }
 
 # ── Argument parsing ──────────────────────────────────────────────────────────

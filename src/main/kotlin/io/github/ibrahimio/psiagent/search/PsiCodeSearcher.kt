@@ -120,10 +120,17 @@ class PsiCodeSearcher(private val project: Project) {
         if (!pattern.contains('*') && !pattern.contains('?')) {
             return Regex(".*${Regex.escape(pattern)}.*", RegexOption.IGNORE_CASE)
         }
-        val regexStr = pattern
-            .replace(".", "\\.")
-            .replace("*", ".*")
-            .replace("?", ".")
-        return Regex(regexStr, RegexOption.IGNORE_CASE)
+        // Split on wildcards, escape each literal segment, then rejoin with .* or .
+        val sb = StringBuilder()
+        var i = 0
+        while (i < pattern.length) {
+            when (val c = pattern[i]) {
+                '*' -> sb.append(".*")
+                '?' -> sb.append('.')
+                else -> sb.append(Regex.escape(c.toString()))
+            }
+            i++
+        }
+        return Regex(sb.toString(), RegexOption.IGNORE_CASE)
     }
 }

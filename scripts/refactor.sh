@@ -73,9 +73,14 @@ op_rename_method() {
     local backup="${file}.bak"
     cp "$file" "$backup"
 
+    # Escape sed metacharacters in the names to prevent injection / incorrect substitution
+    local escaped_old escaped_new
+    escaped_old="$(printf '%s' "$old_name" | sed 's/[[\.*^$()+?{|]/\\&/g')"
+    escaped_new="$(printf '%s' "$new_name" | sed 's/[[\.*^$()+?{|/]/\\&/g')"
+
     # Use word-boundary regex to avoid partial matches
-    if sed -i "s/\b${old_name}\b/${new_name}/g" "$file" 2>/dev/null || \
-       sed -i '' "s/[[:<:]]${old_name}[[:>:]]/${new_name}/g" "$file" 2>/dev/null; then
+    if sed -i "s/\b${escaped_old}\b/${escaped_new}/g" "$file" 2>/dev/null || \
+       sed -i '' "s/[[:<:]]${escaped_old}[[:>:]]/${escaped_new}/g" "$file" 2>/dev/null; then
         local changed
         changed=$(diff "$backup" "$file" | grep -c '^[<>]' || true)
         echo "Result  : SUCCESS"
@@ -116,19 +121,19 @@ op_search() {
         method)
             echo "--- Method Definitions ---"
             grep -rn --include="*.java" --include="*.kt" \
-                -E "(public|private|protected|static|\s)+[a-zA-Z<>\[\]]+\s+${grep_pattern}\s*\(" \
+                -E "(public|private|protected|static)[[:space:]]+[a-zA-Z<>?, ]*[[:space:]]${grep_pattern}[[:space:]]*\(|(fun)[[:space:]]+${grep_pattern}[[:space:]]*\(" \
                 "$PROJECT_ROOT/src" 2>/dev/null || echo "(none found)"
             ;;
         class)
             echo "--- Class Definitions ---"
             grep -rn --include="*.java" --include="*.kt" \
-                -E "class\s+${grep_pattern}(\s|<|\{)" \
+                -E "(class|interface|enum)[[:space:]]+${grep_pattern}([[:space:]]|<|\{)" \
                 "$PROJECT_ROOT/src" 2>/dev/null || echo "(none found)"
             ;;
         field)
             echo "--- Field Definitions ---"
             grep -rn --include="*.java" --include="*.kt" \
-                -E "(private|public|protected|val|var)\s+[a-zA-Z<>\[\]]+\s+${grep_pattern}\s*[=;]" \
+                -E "(private|public|protected|val|var)[[:space:]]+[a-zA-Z<>?, ]*[[:space:]]${grep_pattern}[[:space:]]*[=;:]" \
                 "$PROJECT_ROOT/src" 2>/dev/null || echo "(none found)"
             ;;
         *)

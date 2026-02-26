@@ -3,8 +3,9 @@
 build/
 out/
 
-# IntelliJ plugin sandbox
+# IntelliJ plugin sandbox and downloaded SDK
 .idea-sandbox/
+.intellijPlatform/
 
 # IntelliJ IDEA project files (keep .idea/ if using VCS)
 .idea/

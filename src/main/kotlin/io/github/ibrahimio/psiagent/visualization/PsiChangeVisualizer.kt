@@ -126,13 +126,20 @@ class PsiChangeVisualizer {
     }
 
     private fun jsonArray(items: List<String>): String =
-        items.joinToString(", ", "[", "]") { "\"${it.replace("\\", "\\\\").replace("\"", "\\\"")}\"" }
+        items.joinToString(", ", "[", "]") { "\"${jsonEscape(it)}\"" }
 
     private fun jsonSnapshots(snapshots: List<PsiNodeSnapshot>): String {
         if (snapshots.isEmpty()) return "[]"
         val entries = snapshots.joinToString(",\n    ") { s ->
-            """{"type": "${s.type}", "name": "${s.name}", "file": "${s.filePath}", "line": ${s.lineNumber}, "text": "${s.text.take(200).replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")}"}"""
+            """{"type": "${jsonEscape(s.type)}", "name": "${jsonEscape(s.name)}", "file": "${jsonEscape(s.filePath)}", "line": ${s.lineNumber}, "text": "${jsonEscape(s.text.take(200))}"}"""
         }
         return "[\n    $entries\n  ]"
     }
+
+    private fun jsonEscape(value: String): String = value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
 }

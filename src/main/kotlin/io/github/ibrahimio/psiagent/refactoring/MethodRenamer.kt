@@ -71,11 +71,23 @@ class MethodRenamer(private val project: Project) {
         val snapshotBefore = listOf(snapshotPsiNode(method, filePath))
 
         val affectedFiles = mutableListOf<String>()
-        WriteCommandAction.runWriteCommandAction(project, "Rename Method '$oldMethodName' to '$newMethodName'", null, {
-            val processor = RenameProcessor(project, method, newMethodName, false, false)
-            processor.run()
-            processor.usages.mapTo(affectedFiles) { it.file?.virtualFile?.path ?: filePath }
-        })
+        try {
+            WriteCommandAction.runWriteCommandAction(project, "Rename Method '$oldMethodName' to '$newMethodName'", null, {
+                val processor = RenameProcessor(project, method, newMethodName, false, false)
+                processor.run()
+                processor.usages.mapTo(affectedFiles) { it.file?.virtualFile?.path ?: filePath }
+            })
+        } catch (e: Exception) {
+            return RenameResult(
+                success = false,
+                message = "Rename failed: ${e.message}",
+                oldName = oldMethodName,
+                newName = newMethodName,
+                affectedFiles = emptyList(),
+                psiNodesBefore = snapshotBefore,
+                psiNodesAfter = emptyList()
+            )
+        }
 
         val renamedMethod = findMethodInFile(psiFile, newMethodName)
         val snapshotAfter = if (renamedMethod != null) {
