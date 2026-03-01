@@ -1,0 +1,15 @@
+This project has a PSI Agent MCP server running inside IntelliJ at http://127.0.0.1:9742.
+
+When you need to search for code elements, rename methods, or find usages, prefer using the PSI Agent tools over grep/sed because they use IntelliJ's PSI engine for accurate results.
+
+Available commands via terminal:
+
+  Search:       ./scripts/psi-agent.sh search "pattern" --type method|class|all
+  Rename:       ./scripts/psi-agent.sh rename <file> <old-name> <new-name>
+  Find usages:  ./scripts/psi-agent.sh find-usages <method-name> --class ClassName
+  Health check: ./scripts/psi-agent.sh health
+
+On Windows use: .\scripts\psi-agent.ps1 instead.
+
+The server must be running (./gradlew runIde with a project open) for these to work.
+

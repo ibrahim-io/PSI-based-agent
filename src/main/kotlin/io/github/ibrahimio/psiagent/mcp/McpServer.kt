@@ -1,0 +1,231 @@
+package io.github.ibrahimio.psiagent.mcp
+
+import com.google.gson.Gson
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.project.Project
+import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpServer
+import io.github.ibrahimio.psiagent.refactoring.MethodRenamer
+import io.github.ibrahimio.psiagent.search.PsiCodeSearcher
+import java.io.IOException
+import java.net.InetSocketAddress
+import java.util.concurrent.Executors
+
+/**
+ * Lightweight HTTP server that exposes PSI operations as MCP-compatible tool calls.
+ * Runs on localhost:9742 (configurable) when a project is open.
+ *
+ * Agents (Claude Desktop, Cursor, custom scripts) call these endpoints to perform
+ * structured code search and refactoring via the IntelliJ PSI engine.
+ */
+class McpServer(private val project: Project) {
+
+    private val log = Logger.getInstance(McpServer::class.java)
+    private val gson = Gson()
+    private var server: HttpServer? = null
+    private val port = 9742
+
+    fun start() {
+        try {
+            server = HttpServer.create(InetSocketAddress("127.0.0.1", port), 0).apply {
+                executor = Executors.newFixedThreadPool(4)
+
+                // MCP discovery — lists available tools
+                createContext("/mcp/tools/list") { handleToolsList(it) }
+
+                // MCP tool execution
+                createContext("/mcp/tools/call") { handleToolCall(it) }
+
+                // Convenience REST endpoints (easier for shell scripts)
+                createContext("/api/search") { handleSearch(it) }
+                createContext("/api/rename") { handleRename(it) }
+                createContext("/api/find-usages") { handleFindUsages(it) }
+                createContext("/api/health") { handleHealth(it) }
+
+                start()
+            }
+            log.info("PSI Agent MCP server started on http://127.0.0.1:$port")
+        } catch (e: IOException) {
+            log.warn("Failed to start MCP server on port $port: ${e.message}")
+        }
+    }
+
+    fun stop() {
+        server?.stop(1)
+        server = null
+        log.info("PSI Agent MCP server stopped")
+    }
+
+    fun isRunning(): Boolean = server != null
+
+    fun getPort(): Int = port
+
+    // ── MCP Protocol Handlers ──────────────────────────────────────────────
+
+    private fun handleToolsList(exchange: HttpExchange) {
+        val tools = McpToolDefinitions.allTools()
+        sendJson(exchange, 200, mapOf("tools" to tools))
+    }
+
+    private fun handleToolCall(exchange: HttpExchange) {
+        if (exchange.requestMethod != "POST") {
+            sendJson(exchange, 405, mapOf("error" to "Method not allowed"))
+            return
+        }
+
+        try {
+            val body = exchange.requestBody.bufferedReader().readText()
+            val request = JsonParser.parseString(body).asJsonObject
+            val toolName = request.get("name")?.asString
+            val params = request.getAsJsonObject("arguments") ?: JsonObject()
+
+            when (toolName) {
+                "psi_search" -> executeSearch(exchange, params)
+                "psi_rename" -> executeRename(exchange, params)
+                "psi_find_usages" -> executeFindUsages(exchange, params)
+                else -> sendJson(exchange, 400, mapOf(
+                    "error" to "Unknown tool: $toolName",
+                    "available" to listOf("psi_search", "psi_rename", "psi_find_usages")
+                ))
+            }
+        } catch (e: Exception) {
+            sendJson(exchange, 500, mapOf("error" to "Internal error: ${e.message}"))
+        }
+    }
+
+    // ── REST Convenience Handlers ──────────────────────────────────────────
+
+    private fun handleHealth(exchange: HttpExchange) {
+        sendJson(exchange, 200, mapOf(
+            "status" to "ok",
+            "project" to project.name,
+            "projectPath" to (project.basePath ?: ""),
+            "mcpToolsUrl" to "http://127.0.0.1:$port/mcp/tools/list"
+        ))
+    }
+
+    private fun handleSearch(exchange: HttpExchange) {
+        if (exchange.requestMethod != "POST") {
+            sendJson(exchange, 405, mapOf("error" to "POST required"))
+            return
+        }
+        val body = exchange.requestBody.bufferedReader().readText()
+        val params = JsonParser.parseString(body).asJsonObject
+        executeSearch(exchange, params)
+    }
+
+    private fun handleRename(exchange: HttpExchange) {
+        if (exchange.requestMethod != "POST") {
+            sendJson(exchange, 405, mapOf("error" to "POST required"))
+            return
+        }
+        val body = exchange.requestBody.bufferedReader().readText()
+        val params = JsonParser.parseString(body).asJsonObject
+        executeRename(exchange, params)
+    }
+
+    private fun handleFindUsages(exchange: HttpExchange) {
+        if (exchange.requestMethod != "POST") {
+            sendJson(exchange, 405, mapOf("error" to "POST required"))
+            return
+        }
+        val body = exchange.requestBody.bufferedReader().readText()
+        val params = JsonParser.parseString(body).asJsonObject
+        executeFindUsages(exchange, params)
+    }
+
+    // ── Tool Execution Logic ───────────────────────────────────────────────
+
+    private fun executeSearch(exchange: HttpExchange, params: JsonObject) {
+        val query = params.get("query")?.asString
+        val type = params.get("type")?.asString ?: "all"
+
+        if (query.isNullOrBlank()) {
+            sendJson(exchange, 400, mapOf("error" to "Missing required parameter: query"))
+            return
+        }
+
+        val results = ReadAction.compute<Any, Exception> {
+            val searcher = PsiCodeSearcher(project)
+            when (type) {
+                "method" -> searcher.searchMethods(query)
+                "class" -> searcher.searchClasses(query)
+                else -> searcher.searchAll(query)
+            }
+        }
+
+        sendJson(exchange, 200, mapOf(
+            "tool" to "psi_search",
+            "query" to query,
+            "type" to type,
+            "results" to results
+        ))
+    }
+
+    private fun executeRename(exchange: HttpExchange, params: JsonObject) {
+        val file = params.get("file")?.asString
+        val oldName = params.get("old_name")?.asString
+        val newName = params.get("new_name")?.asString
+
+        if (file.isNullOrBlank() || oldName.isNullOrBlank() || newName.isNullOrBlank()) {
+            sendJson(exchange, 400, mapOf("error" to "Missing required parameters: file, old_name, new_name"))
+            return
+        }
+
+        // Resolve relative paths against project base
+        val resolvedFile = if (file.startsWith("/") || file.contains(":")) {
+            file
+        } else {
+            "${project.basePath}/$file"
+        }
+
+        // RenameProcessor must run on EDT with write access
+        var result: Any? = null
+        ApplicationManager.getApplication().invokeAndWait {
+            val renamer = MethodRenamer(project)
+            result = renamer.renameMethod(resolvedFile, oldName, newName)
+        }
+
+        sendJson(exchange, 200, mapOf(
+            "tool" to "psi_rename",
+            "result" to result
+        ))
+    }
+
+    private fun executeFindUsages(exchange: HttpExchange, params: JsonObject) {
+        val methodName = params.get("method_name")?.asString
+        val className = params.get("class_name")?.asString
+
+        if (methodName.isNullOrBlank()) {
+            sendJson(exchange, 400, mapOf("error" to "Missing required parameter: method_name"))
+            return
+        }
+
+        val results = ReadAction.compute<Any, Exception> {
+            val searcher = PsiCodeSearcher(project)
+            searcher.findUsages(methodName, className)
+        }
+
+        sendJson(exchange, 200, mapOf(
+            "tool" to "psi_find_usages",
+            "method_name" to methodName,
+            "results" to results
+        ))
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+
+    private fun sendJson(exchange: HttpExchange, statusCode: Int, data: Any) {
+        val json = gson.toJson(data)
+        val bytes = json.toByteArray(Charsets.UTF_8)
+        exchange.responseHeaders.add("Content-Type", "application/json; charset=utf-8")
+        exchange.responseHeaders.add("Access-Control-Allow-Origin", "*")
+        exchange.sendResponseHeaders(statusCode, bytes.size.toLong())
+        exchange.responseBody.use { it.write(bytes) }
+    }
+}
+

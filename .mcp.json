@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "psi-agent": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "C:\\Users\\iibra\\IdeaProjects\\PSI-based-agent\\scripts\\mcp-stdio-bridge.js"
+      ],
+      "env": {}
+    }
+  }
+}

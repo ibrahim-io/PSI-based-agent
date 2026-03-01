@@ -5,6 +5,13 @@
     <description>PSI-based code refactoring agent with AI integration</description>
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>
+    <depends>org.jetbrains.kotlin</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- MCP server lifecycle -->
+        <projectService serviceImplementation="io.github.ibrahimio.psiagent.mcp.McpServerService"/>
+        <postStartupActivity implementation="io.github.ibrahimio.psiagent.mcp.McpServerStartupActivity"/>
+    </extensions>
 
     <actions>
         <action id="PSIAgent.RenameMethod"

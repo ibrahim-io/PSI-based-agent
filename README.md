@@ -22,14 +22,24 @@ PSI-based-agent/
 ├── settings.gradle.kts
 ├── gradle.properties
 ├── gradlew / gradlew.bat      # Gradle wrapper
+Remove-Item -Recurse -Force .sandbox -ErrorAction SilentlyContinueRemove-Item -Recurse -Force .sandbox -ErrorAction SilentlyContinue├── CLAUDE.md                   # Agent instructions (Claude Code)
+├── .cursorrules                # Agent instructions (Cursor)
+├── mcp-config.json             # MCP server config (Claude Desktop)
 ├── scripts/
-│   ├── refactor.sh            # Shell interface for AI agents
-│   └── search_code.sh         # "Ibrahim search" — PSI-aware code search
+│   ├── psi-agent.sh           # CLI tool — talks to MCP server (bash)
+│   ├── psi-agent.ps1          # CLI tool — talks to MCP server (PowerShell)
+│   ├── mcp-stdio-bridge.js    # MCP stdio-to-HTTP bridge (Claude Desktop)
+│   ├── refactor.sh            # Fallback shell refactoring (grep/sed)
+│   └── search_code.sh         # Fallback "Ibrahim search" (grep-based)
 └── src/
     ├── main/kotlin/io/github/ibrahimio/psiagent/
     │   ├── actions/RenameMethodAction.kt      # Right-click context menu action
+    │   ├── mcp/
+    │   │   ├── McpServer.kt                   # HTTP server exposing PSI tools
+    │   │   ├── McpServerService.kt            # Lifecycle (start on project open)
+    │   │   └── McpToolDefinitions.kt          # MCP tool schemas
     │   ├── refactoring/MethodRenamer.kt       # Core PSI rename logic
-    │   ├── search/PsiCodeSearcher.kt          # Ibrahim search implementation
+    │   ├── search/PsiCodeSearcher.kt          # PSI-indexed code search
     │   └── visualization/PsiChangeVisualizer.kt  # Before/after PSI diff
     └── test/kotlin/.../refactoring/MethodRenamerTest.kt
 ```
@@ -158,3 +168,60 @@ Uses `PsiShortNamesCache` and `MethodReferencesSearch` for fast, index-backed se
 
 ### `PsiChangeVisualizer`
 Generates before/after snapshots of the affected PSI nodes and formats them as a human-readable diff and a JSON tree — useful for an AI agent to understand exactly what changed.
+
+## AI Agent Integration
+
+The plugin exposes PSI operations to external AI agents via two approaches:
+
+### Approach 1: MCP Server (runs inside IntelliJ)
+
+When you open a project in the sandbox IDE (`./gradlew runIde`), an HTTP server starts automatically on `http://127.0.0.1:9742`. Any agent can call it.
+
+```bash
+# Check the server is running
+curl http://127.0.0.1:9742/api/health
+
+# Search for methods
+curl -X POST http://127.0.0.1:9742/api/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "get*", "type": "method"}'
+
+# Rename a method (updates all usages via PSI)
+curl -X POST http://127.0.0.1:9742/api/rename \
+  -H "Content-Type: application/json" \
+  -d '{"file": "src/main/java/Foo.java", "old_name": "calculate", "new_name": "compute"}'
+
+# Find all usages of a method
+curl -X POST http://127.0.0.1:9742/api/find-usages \
+  -H "Content-Type: application/json" \
+  -d '{"method_name": "processOrder"}'
+
+# MCP tool discovery (for MCP-compatible agents)
+curl http://127.0.0.1:9742/mcp/tools/list
+```
+
+### Approach 2: CLI Scripts (wrapper around the MCP server)
+
+```bash
+# Bash (Linux/macOS/Git Bash)
+./scripts/psi-agent.sh search "getUserById" --type method
+./scripts/psi-agent.sh rename src/Foo.java calculate compute
+./scripts/psi-agent.sh find-usages processOrder --class OrderService
+./scripts/psi-agent.sh health
+
+# PowerShell (Windows)
+.\scripts\psi-agent.ps1 search "getUserById" -Type method
+.\scripts\psi-agent.ps1 rename src/Foo.java calculate compute
+.\scripts\psi-agent.ps1 find-usages processOrder -Class OrderService
+```
+
+### Configuring Agents
+
+**Claude Code**: The `CLAUDE.md` file in the project root automatically instructs Claude Code about available tools.
+
+**Cursor**: The `.cursorrules` file instructs Cursor about available CLI commands.
+
+**Claude Desktop (MCP)**: Copy `mcp-config.json` into your Claude Desktop config. The `mcp-stdio-bridge.js` translates MCP stdio JSON-RPC to HTTP calls to the plugin server.
+
+**Any other agent**: Point it at the CLI scripts or the HTTP API directly. All responses are JSON.
+

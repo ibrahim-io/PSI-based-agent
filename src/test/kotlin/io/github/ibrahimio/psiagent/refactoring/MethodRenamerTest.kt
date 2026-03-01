@@ -1,6 +1,11 @@
 package io.github.ibrahimio.psiagent.refactoring
 
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import junit.framework.TestCase.assertEquals
+import junit.framework.TestCase.assertFalse
+import junit.framework.TestCase.assertNotNull
+import junit.framework.TestCase.assertNull
+import junit.framework.TestCase.assertTrue
 
 class MethodRenamerTest : BasePlatformTestCase() {
 
@@ -18,7 +23,7 @@ class MethodRenamerTest : BasePlatformTestCase() {
         """.trimIndent()
 
         val psiFile = myFixture.configureByText("Calculator.java", javaCode)
-        val filePath = psiFile.virtualFile.path
+        val filePath = psiFile.virtualFile.url
 
         val renamer = MethodRenamer(project)
         val result = renamer.renameMethod(filePath, "add", "sum")
@@ -46,7 +51,7 @@ class MethodRenamerTest : BasePlatformTestCase() {
         """.trimIndent()
 
         val psiFile = myFixture.configureByText("Greeter.java", javaCode)
-        val filePath = psiFile.virtualFile.path
+        val filePath = psiFile.virtualFile.url
 
         val renamer = MethodRenamer(project)
         val result = renamer.renameMethod(filePath, "nonExistent", "newName")
@@ -73,7 +78,7 @@ class MethodRenamerTest : BasePlatformTestCase() {
         """.trimIndent()
 
         val psiFile = myFixture.configureByText("StringUtils.java", javaCode)
-        val filePath = psiFile.virtualFile.path
+        val filePath = psiFile.virtualFile.url
 
         val renamer = MethodRenamer(project)
         val result = renamer.renameMethod(filePath, "reverse", "reverseString")
@@ -99,7 +104,7 @@ class MethodRenamerTest : BasePlatformTestCase() {
         """.trimIndent()
 
         val psiFile = myFixture.configureByText("MathHelper.java", javaCode)
-        val filePath = psiFile.virtualFile.path
+        val filePath = psiFile.virtualFile.url
 
         val renamer = MethodRenamer(project)
         val result = renamer.renameMethod(filePath, "compute", "calculate")

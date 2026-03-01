@@ -6,6 +6,7 @@ out/
 # IntelliJ plugin sandbox and downloaded SDK
 .idea-sandbox/
 .intellijPlatform/
+.sandbox/
 
 # IntelliJ IDEA project files (keep .idea/ if using VCS)
 .idea/

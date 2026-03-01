@@ -18,8 +18,12 @@ dependencies {
     intellijPlatform {
         intellijIdeaCommunity("2023.3.4")
         bundledPlugin("com.intellij.java")
+        bundledPlugin("org.jetbrains.kotlin")
         instrumentationTools()
+        testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
     }
+    implementation("com.google.code.gson:gson:2.10.1")
+    testImplementation("junit:junit:4.13.2")
 }
 
 intellijPlatform {
@@ -27,6 +31,9 @@ intellijPlatform {
         name = "PSI Agent"
         version = "1.0.0-SNAPSHOT"
     }
+    // Persist sandbox state (installed plugins like Copilot) across runIde restarts
+    sandboxContainer = layout.projectDirectory.dir(".sandbox")
+    buildSearchableOptions = false
 }
 
 kotlin {

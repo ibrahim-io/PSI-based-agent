@@ -3,12 +3,15 @@ package io.github.ibrahimio.psiagent.refactoring
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiMethod
+import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.refactoring.rename.RenameProcessor
+import org.jetbrains.kotlin.psi.KtNamedFunction
 
 data class PsiNodeSnapshot(
     val type: String,
@@ -35,7 +38,9 @@ class MethodRenamer(private val project: Project) {
         oldMethodName: String,
         newMethodName: String
     ): RenameResult {
-        val virtualFile = LocalFileSystem.getInstance().findFileByPath(filePath)
+        val virtualFile = VirtualFileManager.getInstance().findFileByUrl("file://$filePath")
+            ?: VirtualFileManager.getInstance().findFileByUrl(filePath)
+            ?: LocalFileSystem.getInstance().findFileByPath(filePath)
             ?: return RenameResult(
                 success = false,
                 message = "File not found: $filePath",
@@ -74,8 +79,9 @@ class MethodRenamer(private val project: Project) {
         try {
             WriteCommandAction.runWriteCommandAction(project, "Rename Method '$oldMethodName' to '$newMethodName'", null, {
                 val processor = RenameProcessor(project, method, newMethodName, false, false)
+                val usages = processor.findUsages()
+                usages.mapTo(affectedFiles) { it.element?.containingFile?.virtualFile?.path ?: filePath }
                 processor.run()
-                processor.usages.mapTo(affectedFiles) { it.file?.virtualFile?.path ?: filePath }
             })
         } catch (e: Exception) {
             return RenameResult(
@@ -111,9 +117,16 @@ class MethodRenamer(private val project: Project) {
         )
     }
 
-    fun findMethodInFile(psiFile: PsiFile, methodName: String): PsiMethod? {
-        return PsiTreeUtil.collectElements(psiFile) { it is PsiMethod }
+    fun findMethodInFile(psiFile: PsiFile, methodName: String): PsiNamedElement? {
+        // Try Java methods first
+        val javaMethod = PsiTreeUtil.collectElements(psiFile) { it is PsiMethod }
             .filterIsInstance<PsiMethod>()
+            .firstOrNull { it.name == methodName }
+        if (javaMethod != null) return javaMethod
+
+        // Try Kotlin functions
+        return PsiTreeUtil.collectElements(psiFile) { it is KtNamedFunction }
+            .filterIsInstance<KtNamedFunction>()
             .firstOrNull { it.name == methodName }
     }
 
@@ -125,6 +138,7 @@ class MethodRenamer(private val project: Project) {
 
         val name = when (element) {
             is PsiMethod -> element.name
+            is KtNamedFunction -> element.name ?: "<unnamed>"
             is com.intellij.psi.PsiClass -> element.name ?: "<anonymous>"
             is com.intellij.psi.PsiNamedElement -> element.name ?: "<unnamed>"
             else -> "<unknown>"
