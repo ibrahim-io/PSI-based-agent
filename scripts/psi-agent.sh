@@ -20,17 +20,33 @@ set -euo pipefail
 
 PSI_AGENT_PORT="${PSI_AGENT_PORT:-9742}"
 PSI_AGENT_URL="http://127.0.0.1:${PSI_AGENT_PORT}"
+PSI_AGENT_TOKEN_FILE="${PSI_AGENT_TOKEN_FILE:-$HOME/.psi-agent/token}"
+AUTH_ARGS=()
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+load_auth() {
+    AUTH_ARGS=()
+
+    local token="${PSI_AGENT_TOKEN:-}"
+    if [[ -z "$token" && -f "$PSI_AGENT_TOKEN_FILE" ]]; then
+        token="$(tr -d '\r\n' < "$PSI_AGENT_TOKEN_FILE" 2>/dev/null || true)"
+    fi
+
+    if [[ -n "$token" ]]; then
+        AUTH_ARGS=(-H "Authorization: Bearer ${token}")
+    fi
+}
+
 check_server() {
-    if ! curl -sf "${PSI_AGENT_URL}/api/health" > /dev/null 2>&1; then
+    load_auth
+    if ! curl -sf "${AUTH_ARGS[@]}" "${PSI_AGENT_URL}/api/health" > /dev/null 2>&1; then
         echo "ERROR: PSI Agent MCP server is not running on port ${PSI_AGENT_PORT}." >&2
         echo "" >&2
         echo "To start it:" >&2
         echo "  1. Run: ./gradlew runIde" >&2
         echo "  2. Open a project in the sandbox IDE" >&2
-        echo "  3. The server starts automatically" >&2
+        echo "  3. The server starts automatically and writes ~/.psi-agent/token" >&2
         exit 1
     fi
 }
@@ -39,6 +55,7 @@ post_json() {
     local endpoint="$1"
     local json_body="$2"
     curl -sf -X POST \
+        "${AUTH_ARGS[@]}" \
         -H "Content-Type: application/json" \
         -d "$json_body" \
         "${PSI_AGENT_URL}${endpoint}"
@@ -82,6 +99,8 @@ Options:
 
 Environment:
   PSI_AGENT_PORT    Server port (default: 9742)
+  PSI_AGENT_TOKEN   Override the bearer token used for HTTP requests
+  PSI_AGENT_TOKEN_FILE  Path to the token file (default: ~/.psi-agent/token)
 EOF
 }
 
@@ -89,14 +108,14 @@ EOF
 
 cmd_health() {
     check_server
-    curl -sf "${PSI_AGENT_URL}/api/health" | python3 -m json.tool 2>/dev/null || \
-        curl -sf "${PSI_AGENT_URL}/api/health"
+    curl -sf "${AUTH_ARGS[@]}" "${PSI_AGENT_URL}/api/health" | python3 -m json.tool 2>/dev/null || \
+        curl -sf "${AUTH_ARGS[@]}" "${PSI_AGENT_URL}/api/health"
 }
 
 cmd_tools() {
     check_server
-    curl -sf "${PSI_AGENT_URL}/mcp/tools/list" | python3 -m json.tool 2>/dev/null || \
-        curl -sf "${PSI_AGENT_URL}/mcp/tools/list"
+    curl -sf "${AUTH_ARGS[@]}" "${PSI_AGENT_URL}/mcp/tools/list" | python3 -m json.tool 2>/dev/null || \
+        curl -sf "${AUTH_ARGS[@]}" "${PSI_AGENT_URL}/mcp/tools/list"
 }
 
 cmd_search() {

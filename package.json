@@ -1,0 +1,14 @@
+{
+  "name": "psi-based-agent-mcp-bridge",
+  "private": true,
+  "version": "1.0.0",
+  "type": "commonjs",
+  "scripts": {
+    "bridge": "node scripts/mcp-stdio-bridge.js",
+    "test:bridge": "node scripts/test-mcp-bridge.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}
+

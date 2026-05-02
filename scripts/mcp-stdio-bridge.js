@@ -2,179 +2,138 @@
 /**
  * MCP stdio-to-HTTP bridge for PSI Agent.
  *
- * Claude Desktop and other MCP clients communicate via stdin/stdout JSON-RPC.
- * This bridge translates those messages to HTTP calls to the PSI Agent server
- * running inside IntelliJ.
+ * Claude Desktop and other MCP clients connect to this process over stdio.
+ * The bridge exposes MCP tools and forwards them to the IntelliJ HTTP server
+ * running at PSI_AGENT_URL.
  *
- * Usage (standalone):   node scripts/mcp-stdio-bridge.js
- * Usage (Claude Desktop): configure in mcp-config.json (see project root)
+ * Usage:
+ *   node scripts/mcp-stdio-bridge.js
  *
  * Environment:
  *   PSI_AGENT_URL  — base URL (default: http://127.0.0.1:9742)
  */
 
+const fs = require("fs");
 const http = require("http");
-const readline = require("readline");
+const os = require("os");
+const path = require("path");
+const { Server } = require("@modelcontextprotocol/sdk/server/index.js");
+const { StdioServerTransport } = require("@modelcontextprotocol/sdk/server/stdio.js");
+const { ListToolsRequestSchema, CallToolRequestSchema } = require("@modelcontextprotocol/sdk/types.js");
 
 const BASE_URL = process.env.PSI_AGENT_URL || "http://127.0.0.1:9742";
+const TOKEN_FILE = process.env.PSI_AGENT_TOKEN_FILE || path.join(os.homedir(), ".psi-agent", "token");
 
-// ── HTTP helper ─────────────────────────────────────────────────────────────
+function loadAuthToken() {
+  if (process.env.PSI_AGENT_TOKEN) return process.env.PSI_AGENT_TOKEN.trim();
+  try {
+    const token = fs.readFileSync(TOKEN_FILE, "utf8").trim();
+    return token || null;
+  } catch {
+    return null;
+  }
+}
 
-function httpPost(path, body) {
+function buildHeaders(payload) {
+  const headers = payload
+    ? {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(payload),
+      }
+    : {};
+
+  const token = loadAuthToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  return headers;
+}
+
+function requestJson(method, path, body) {
   return new Promise((resolve, reject) => {
     const url = new URL(path, BASE_URL);
-    const data = JSON.stringify(body);
+    const payload = body == null ? null : JSON.stringify(body);
     const req = http.request(
       {
         hostname: url.hostname,
         port: url.port,
         path: url.pathname,
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(data),
-        },
+        method,
+        headers: buildHeaders(payload),
       },
       (res) => {
         let chunks = [];
         res.on("data", (c) => chunks.push(c));
         res.on("end", () => {
+          const text = Buffer.concat(chunks).toString();
+          if (!text) {
+            resolve(null);
+            return;
+          }
           try {
-            resolve(JSON.parse(Buffer.concat(chunks).toString()));
+            const parsed = JSON.parse(text);
+            if (res.statusCode >= 400) {
+              reject(new Error(parsed?.error || `HTTP ${res.statusCode}`));
+              return;
+            }
+            resolve(parsed);
           } catch {
-            resolve({ error: "Invalid JSON from server" });
+            reject(new Error(`Invalid JSON from server: ${text.slice(0, 200)}`));
           }
         });
       }
     );
-    req.on("error", (e) => reject(e));
-    req.write(data);
+    req.on("error", reject);
+    if (payload) req.write(payload);
     req.end();
   });
 }
 
-function httpGet(path) {
-  return new Promise((resolve, reject) => {
-    const url = new URL(path, BASE_URL);
-    http
-      .get(url, (res) => {
-        let chunks = [];
-        res.on("data", (c) => chunks.push(c));
-        res.on("end", () => {
-          try {
-            resolve(JSON.parse(Buffer.concat(chunks).toString()));
-          } catch {
-            resolve({ error: "Invalid JSON from server" });
-          }
-        });
-      })
-      .on("error", (e) => reject(e));
+function normalizeToolsList(data) {
+  if (Array.isArray(data)) return { tools: data };
+  if (Array.isArray(data?.tools)) return { tools: data.tools };
+  return { tools: [] };
+}
+
+function normalizeToolCallResult(data) {
+  if (data && typeof data === "object" && data.error) {
+    return {
+      content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+      isError: true,
+    };
+  }
+
+  return {
+    content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+  };
+}
+
+async function main() {
+  const server = new Server(
+    { name: "psi-agent", version: "1.0.0" },
+    { capabilities: { tools: {} } }
+  );
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    const data = await requestJson("GET", "/mcp/tools/list");
+    return normalizeToolsList(data);
   });
+
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const data = await requestJson("POST", "/mcp/tools/call", {
+      name: request.params.name,
+      arguments: request.params.arguments || {},
+    });
+    return normalizeToolCallResult(data);
+  });
+
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  process.stderr.write(`PSI Agent MCP stdio bridge started at ${BASE_URL}\n`);
 }
 
-// ── JSON-RPC helpers ────────────────────────────────────────────────────────
-
-function sendResponse(id, result) {
-  const msg = { jsonrpc: "2.0", id, result };
-  const json = JSON.stringify(msg);
-  process.stdout.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`);
-}
-
-function sendError(id, code, message) {
-  const msg = { jsonrpc: "2.0", id, error: { code, message } };
-  const json = JSON.stringify(msg);
-  process.stdout.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`);
-}
-
-// ── MCP message handling ────────────────────────────────────────────────────
-
-async function handleMessage(msg) {
-  const { id, method, params } = msg;
-
-  try {
-    switch (method) {
-      case "initialize":
-        sendResponse(id, {
-          protocolVersion: "2024-11-05",
-          capabilities: { tools: {} },
-          serverInfo: { name: "psi-agent", version: "1.0.0" },
-        });
-        break;
-
-      case "tools/list": {
-        const data = await httpGet("/mcp/tools/list");
-        sendResponse(id, data);
-        break;
-      }
-
-      case "tools/call": {
-        const toolName = params?.name;
-        const args = params?.arguments || {};
-        const data = await httpPost("/mcp/tools/call", {
-          name: toolName,
-          arguments: args,
-        });
-        sendResponse(id, {
-          content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
-        });
-        break;
-      }
-
-      case "notifications/initialized":
-        // No response needed for notifications
-        break;
-
-      default:
-        sendError(id, -32601, `Method not found: ${method}`);
-    }
-  } catch (e) {
-    sendError(id, -32000, `Server error: ${e.message}`);
-  }
-}
-
-// ── stdin reader (Content-Length framed JSON-RPC) ───────────────────────────
-
-let buffer = "";
-
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (chunk) => {
-  buffer += chunk;
-
-  while (true) {
-    const headerEnd = buffer.indexOf("\r\n\r\n");
-    if (headerEnd === -1) break;
-
-    const header = buffer.substring(0, headerEnd);
-    const match = header.match(/Content-Length:\s*(\d+)/i);
-    if (!match) {
-      // Try line-delimited JSON as fallback
-      const lineEnd = buffer.indexOf("\n");
-      if (lineEnd !== -1) {
-        const line = buffer.substring(0, lineEnd).trim();
-        buffer = buffer.substring(lineEnd + 1);
-        if (line) {
-          try {
-            handleMessage(JSON.parse(line));
-          } catch {}
-        }
-      }
-      break;
-    }
-
-    const contentLength = parseInt(match[1], 10);
-    const bodyStart = headerEnd + 4;
-    if (buffer.length < bodyStart + contentLength) break;
-
-    const body = buffer.substring(bodyStart, bodyStart + contentLength);
-    buffer = buffer.substring(bodyStart + contentLength);
-
-    try {
-      handleMessage(JSON.parse(body));
-    } catch (e) {
-      process.stderr.write(`Parse error: ${e.message}\n`);
-    }
-  }
+main().catch((error) => {
+  process.stderr.write(`PSI Agent MCP stdio bridge failed: ${error.message}\n`);
+  process.exit(1);
 });
-
-process.stderr.write("PSI Agent MCP stdio bridge started\n");
-

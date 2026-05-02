@@ -39,3 +39,13 @@ intellijPlatform {
 kotlin {
     jvmToolchain(17)
 }
+
+// Headless task: run the IDE without GUI for faster PSI server startup
+tasks.register("runHeadless") {
+    dependsOn("runIde")
+    doFirst {
+        val jvmArgs = tasks.named<JavaExec>("runIde").get().jvmArgs ?: mutableListOf()
+        jvmArgs.add("-Djava.awt.headless=true")
+        tasks.named<JavaExec>("runIde").get().jvmArgs = jvmArgs
+    }
+}

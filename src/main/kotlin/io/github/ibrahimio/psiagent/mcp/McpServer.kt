@@ -31,6 +31,7 @@ class McpServer(private val project: Project) {
 
     fun start() {
         try {
+            PsiAgentAuth.ensureToken()
             server = HttpServer.create(InetSocketAddress("127.0.0.1", port), 0).apply {
                 executor = Executors.newFixedThreadPool(4)
 
@@ -67,11 +68,13 @@ class McpServer(private val project: Project) {
     // ── MCP Protocol Handlers ──────────────────────────────────────────────
 
     private fun handleToolsList(exchange: HttpExchange) {
+        if (!requireAuth(exchange)) return
         val tools = McpToolDefinitions.allTools()
         sendJson(exchange, 200, mapOf("tools" to tools))
     }
 
     private fun handleToolCall(exchange: HttpExchange) {
+        if (!requireAuth(exchange)) return
         if (exchange.requestMethod != "POST") {
             sendJson(exchange, 405, mapOf("error" to "Method not allowed"))
             return
@@ -100,15 +103,19 @@ class McpServer(private val project: Project) {
     // ── REST Convenience Handlers ──────────────────────────────────────────
 
     private fun handleHealth(exchange: HttpExchange) {
+        if (!requireAuth(exchange)) return
         sendJson(exchange, 200, mapOf(
             "status" to "ok",
             "project" to project.name,
             "projectPath" to (project.basePath ?: ""),
+            "authRequired" to true,
+            "tokenFile" to PsiAgentAuth.tokenFile().toString(),
             "mcpToolsUrl" to "http://127.0.0.1:$port/mcp/tools/list"
         ))
     }
 
     private fun handleSearch(exchange: HttpExchange) {
+        if (!requireAuth(exchange)) return
         if (exchange.requestMethod != "POST") {
             sendJson(exchange, 405, mapOf("error" to "POST required"))
             return
@@ -119,6 +126,7 @@ class McpServer(private val project: Project) {
     }
 
     private fun handleRename(exchange: HttpExchange) {
+        if (!requireAuth(exchange)) return
         if (exchange.requestMethod != "POST") {
             sendJson(exchange, 405, mapOf("error" to "POST required"))
             return
@@ -129,6 +137,7 @@ class McpServer(private val project: Project) {
     }
 
     private fun handleFindUsages(exchange: HttpExchange) {
+        if (!requireAuth(exchange)) return
         if (exchange.requestMethod != "POST") {
             sendJson(exchange, 405, mapOf("error" to "POST required"))
             return
@@ -219,6 +228,16 @@ class McpServer(private val project: Project) {
 
     // ── Helpers ────────────────────────────────────────────────────────────
 
+    private fun requireAuth(exchange: HttpExchange): Boolean {
+        val expectedToken = PsiAgentAuth.readToken() ?: return true
+        val provided = exchange.requestHeaders.getFirst("Authorization")?.trim()
+        if (provided == "Bearer $expectedToken") return true
+
+        exchange.responseHeaders.add("WWW-Authenticate", "Bearer")
+        sendJson(exchange, 401, mapOf("error" to "Unauthorized"))
+        return false
+    }
+
     private fun sendJson(exchange: HttpExchange, statusCode: Int, data: Any) {
         val json = gson.toJson(data)
         val bytes = json.toByteArray(Charsets.UTF_8)
@@ -228,4 +247,3 @@ class McpServer(private val project: Project) {
         exchange.responseBody.use { it.write(bytes) }
     }
 }
-

@@ -1,12 +1,14 @@
 {
   "mcpServers": {
     "psi-agent": {
+      "type": "stdio",
       "command": "node",
-      "args": ["scripts/mcp-stdio-bridge.js"],
+      "args": [
+        "C:\\Users\\iibra\\IdeaProjects\\PSI-based-agent\\scripts\\mcp-stdio-bridge.js"
+      ],
       "env": {
         "PSI_AGENT_URL": "http://127.0.0.1:9742"
       }
     }
   }
 }
-

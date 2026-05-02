@@ -19,16 +19,18 @@ PSI (Program Structure Interface) is IntelliJ IDEA's API for working with code a
 ```
 PSI-based-agent/
 ├── build.gradle.kts           # Gradle IntelliJ Platform Plugin build
+├── package.json               # Node manifest for the MCP stdio bridge
 ├── settings.gradle.kts
 ├── gradle.properties
 ├── gradlew / gradlew.bat      # Gradle wrapper
-Remove-Item -Recurse -Force .sandbox -ErrorAction SilentlyContinueRemove-Item -Recurse -Force .sandbox -ErrorAction SilentlyContinue├── CLAUDE.md                   # Agent instructions (Claude Code)
-├── .cursorrules                # Agent instructions (Cursor)
-├── mcp-config.json             # MCP server config (Claude Desktop)
+├── CLAUDE.md                  # Agent instructions (Claude Code)
+├── .mcp.json                  # Local MCP config for the stdio bridge
+├── mcp-config.json            # MCP server config (Claude Desktop)
 ├── scripts/
+│   ├── mcp-stdio-bridge.js    # SDK-backed MCP bridge -> IntelliJ HTTP server
+│   ├── test-mcp-bridge.js     # Smoke test for initialize + tools/list
 │   ├── psi-agent.sh           # CLI tool — talks to MCP server (bash)
 │   ├── psi-agent.ps1          # CLI tool — talks to MCP server (PowerShell)
-│   ├── mcp-stdio-bridge.js    # MCP stdio-to-HTTP bridge (Claude Desktop)
 │   ├── refactor.sh            # Fallback shell refactoring (grep/sed)
 │   └── search_code.sh         # Fallback "Ibrahim search" (grep-based)
 └── src/
@@ -48,17 +50,27 @@ Remove-Item -Recurse -Force .sandbox -ErrorAction SilentlyContinueRemove-Item -R
 
 ### Prerequisites
 - JDK 17+
+- Node.js 18+ (for the MCP bridge scripts)
 - Internet access (to download IntelliJ SDK ~700 MB on first build)
 
 ```bash
+# Install Node dependencies for the MCP bridge
+npm ci
+
 # Build the plugin ZIP (ready to install in IntelliJ)
 ./gradlew buildPlugin
 
 # Run tests (uses a headless IntelliJ instance)
 ./gradlew test
 
-# Run the plugin in a sandboxed IntelliJ instance
+# Run the plugin in a sandboxed IntelliJ instance (with GUI)
 ./gradlew runIde
+
+# Run the plugin in headless mode (faster, no GUI — recommended for agents)
+./gradlew runHeadless
+
+# Smoke-test the MCP bridge against a mock backend
+npm run test:bridge
 ```
 
 ## Using the Shell Scripts (Agent Integration)
@@ -177,30 +189,59 @@ The plugin exposes PSI operations to external AI agents via two approaches:
 
 When you open a project in the sandbox IDE (`./gradlew runIde`), an HTTP server starts automatically on `http://127.0.0.1:9742`. Any agent can call it.
 
+> On first start the server creates a bearer token at `~/.psi-agent/token`. The CLI scripts and the MCP bridge read this file automatically. If you call the HTTP API manually with `curl`, add `Authorization: Bearer <token>`.
+
+#### Native MCP Tool Discovery (Claude Code, Cursor)
+
+For the best experience with Claude Code or Cursor, register the MCP bridge so the tools are discoverable as native tools:
+
+**Windows:**
+```bash
+.\scripts\setup-claude-code.ps1
+```
+
+**Linux/macOS:**
+```bash
+./scripts/setup-claude-code.sh
+```
+
+Then:
+1. Restart Claude Code or Cursor
+2. Run `./gradlew runHeadless` (or `./gradlew runIde`)
+3. Open a Java/Kotlin project in the IDE
+4. The `psi_search`, `psi_rename`, and `psi_find_usages` tools will be available natively — no manual curl or approval prompts
+
+If you prefer manual HTTP calls:
+
 ```bash
 # Check the server is running
-curl http://127.0.0.1:9742/api/health
+curl -H "Authorization: Bearer <token>" http://127.0.0.1:9742/api/health
 
 # Search for methods
 curl -X POST http://127.0.0.1:9742/api/search \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
   -d '{"query": "get*", "type": "method"}'
 
 # Rename a method (updates all usages via PSI)
 curl -X POST http://127.0.0.1:9742/api/rename \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
   -d '{"file": "src/main/java/Foo.java", "old_name": "calculate", "new_name": "compute"}'
 
 # Find all usages of a method
 curl -X POST http://127.0.0.1:9742/api/find-usages \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
   -d '{"method_name": "processOrder"}'
 
 # MCP tool discovery (for MCP-compatible agents)
-curl http://127.0.0.1:9742/mcp/tools/list
+curl -H "Authorization: Bearer <token>" http://127.0.0.1:9742/mcp/tools/list
 ```
 
 ### Approach 2: CLI Scripts (wrapper around the MCP server)
+
+The CLI scripts automatically read `~/.psi-agent/token` or the `PSI_AGENT_TOKEN` / `PSI_AGENT_TOKEN_FILE` environment variables.
 
 ```bash
 # Bash (Linux/macOS/Git Bash)
@@ -214,14 +255,3 @@ curl http://127.0.0.1:9742/mcp/tools/list
 .\scripts\psi-agent.ps1 rename src/Foo.java calculate compute
 .\scripts\psi-agent.ps1 find-usages processOrder -Class OrderService
 ```
-
-### Configuring Agents
-
-**Claude Code**: The `CLAUDE.md` file in the project root automatically instructs Claude Code about available tools.
-
-**Cursor**: The `.cursorrules` file instructs Cursor about available CLI commands.
-
-**Claude Desktop (MCP)**: Copy `mcp-config.json` into your Claude Desktop config. The `mcp-stdio-bridge.js` translates MCP stdio JSON-RPC to HTTP calls to the plugin server.
-
-**Any other agent**: Point it at the CLI scripts or the HTTP API directly. All responses are JSON.
-

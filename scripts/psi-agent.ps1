@@ -30,13 +30,29 @@ param(
 
 $Port = if ($env:PSI_AGENT_PORT) { $env:PSI_AGENT_PORT } else { "9742" }
 $BaseUrl = "http://127.0.0.1:$Port"
+$TokenFile = if ($env:PSI_AGENT_TOKEN_FILE) { $env:PSI_AGENT_TOKEN_FILE } else { Join-Path $HOME ".psi-agent\token" }
+
+function Get-AuthHeaders {
+    if ($env:PSI_AGENT_TOKEN) {
+        return @{ Authorization = "Bearer $($env:PSI_AGENT_TOKEN)" }
+    }
+
+    if (Test-Path $TokenFile) {
+        $token = (Get-Content -Raw $TokenFile).Trim()
+        if ($token) {
+            return @{ Authorization = "Bearer $token" }
+        }
+    }
+
+    return @{}
+}
 
 function Test-Server {
     try {
-        $null = Invoke-RestMethod -Uri "$BaseUrl/api/health" -TimeoutSec 2
+        $null = Invoke-RestMethod -Uri "$BaseUrl/api/health" -Headers (Get-AuthHeaders) -TimeoutSec 2
         return $true
     } catch {
-        Write-Error "PSI Agent MCP server is not running on port $Port.`n`nTo start it:`n  1. Run: .\gradlew.bat runIde`n  2. Open a project in the sandbox IDE`n  3. The server starts automatically"
+        Write-Error "PSI Agent MCP server is not running on port $Port.`n`nTo start it:`n  1. Run: .\gradlew.bat runIde`n  2. Open a project in the sandbox IDE`n  3. The server starts automatically and writes ~/.psi-agent/token"
         exit 1
     }
 }
@@ -44,7 +60,7 @@ function Test-Server {
 function Invoke-PsiPost {
     param([string]$Endpoint, [hashtable]$Body)
     $json = $Body | ConvertTo-Json -Depth 10
-    $response = Invoke-RestMethod -Uri "$BaseUrl$Endpoint" -Method Post -ContentType "application/json" -Body $json
+    $response = Invoke-RestMethod -Uri "$BaseUrl$Endpoint" -Method Post -Headers (Get-AuthHeaders) -ContentType "application/json" -Body $json
     $response | ConvertTo-Json -Depth 10
 }
 
@@ -60,6 +76,11 @@ Commands:
   find-usages <method-name> [-Class name]     Find all references
   health                                       Check server status
   tools                                        List MCP tool schemas
+
+Environment:
+  PSI_AGENT_PORT        Server port (default: 9742)
+  PSI_AGENT_TOKEN       Override the bearer token used for HTTP requests
+  PSI_AGENT_TOKEN_FILE  Path to the token file (default: ~/.psi-agent/token)
 "@
 }
 
@@ -72,10 +93,10 @@ Test-Server | Out-Null
 
 switch ($Command) {
     "health" {
-        Invoke-RestMethod -Uri "$BaseUrl/api/health" | ConvertTo-Json -Depth 5
+        Invoke-RestMethod -Uri "$BaseUrl/api/health" -Headers (Get-AuthHeaders) | ConvertTo-Json -Depth 5
     }
     "tools" {
-        Invoke-RestMethod -Uri "$BaseUrl/mcp/tools/list" | ConvertTo-Json -Depth 10
+        Invoke-RestMethod -Uri "$BaseUrl/mcp/tools/list" -Headers (Get-AuthHeaders) | ConvertTo-Json -Depth 10
     }
     "search" {
         $query = $Args[0]
@@ -113,4 +134,3 @@ switch ($Command) {
         exit 1
     }
 }
-

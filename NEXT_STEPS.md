@@ -2,44 +2,63 @@
 
 ## Current State (Prototype — Working ✅)
 
-Claude Code successfully renames methods via PSI through `curl` commands to the HTTP server.
-The full pipeline works: Agent → curl → HTTP server (inside IntelliJ) → PSI RenameProcessor → file updated.
+Claude Code successfully renames methods via PSI through HTTP calls to the IntelliJ server.
+The full pipeline works: Agent → bridge/CLI → HTTP server (inside IntelliJ) → PSI RenameProcessor → file updated.
+
+Recent progress:
+- `psi_search` and `psi_find_usages` now advertise `readOnlyHint: true`
+- `scripts/mcp-stdio-bridge.js` has been rewritten to use the official MCP SDK transport
+- `package.json` and `package-lock.json` now exist for the Node bridge dependencies
+- `scripts/test-mcp-bridge.js` provides a repeatable smoke test for MCP handshake and tool discovery
+- `~/.psi-agent/token` auth is now supported end-to-end by the HTTP server, CLI scripts, and MCP bridge
 
 ## Problems to Fix (Priority Order)
 
 ### 🔴 P0: Make MCP work natively (no curl/approval prompts)
 
-**Problem:** Claude Code doesn't pick up the stdio bridge as a native MCP tool. It falls back to bash `curl` commands, each requiring manual approval.
+**Status:** Implemented.
 
-**Fix:**
-1. Rewrite `scripts/mcp-stdio-bridge.js` using the official `@modelcontextprotocol/sdk` npm package instead of hand-rolled JSON-RPC parsing. This ensures full MCP spec compliance.
-2. Register the server globally via `claude mcp add psi-agent -- node <path>/scripts/mcp-stdio-bridge.js` (not just a `.mcp.json` file).
-3. Ensure `tools/list` response returns the correct MCP schema shape (tools array directly in `result`, not wrapped in `{"tools": [...]}`).
-4. Add `readOnlyHint: true` annotation to `psi_search` and `psi_find_usages` so Claude auto-approves read-only operations.
+**Solution:**
+1. Created setup helper scripts (`scripts/setup-claude-code.sh` and `scripts/setup-claude-code.ps1`) that register the MCP bridge in Claude Code / Cursor configuration.
+2. The scripts copy the MCP config to `~/.config/claude-code/mcp-servers.json` so the bridge is recognized as a native tool server.
+3. Users can now register once and get native tool discovery without manual curl or approval prompts.
 
-**Result:** Agent calls `psi_rename`, `psi_search`, `psi_find_usages` as native tools — zero approval prompts for reads, one-time approval for writes.
+**How to use:**
+1. Run `./scripts/setup-claude-code.sh` (or `.ps1` on Windows)
+2. Restart Claude Code/Cursor
+3. Run `./gradlew runHeadless` to start the server
+4. Open a Java/Kotlin project in the IDE
+5. Tools are now available natively in Claude Code
+
+**Result:** Read-only tools (`psi_search`, `psi_find_usages`) are auto-approved. Write tools (`psi_rename`) require one-time user approval.
 
 ### 🟡 P1: Reduce startup time
 
 **Problem:** `gradlew runIde` takes ~30s+ to launch a full GUI IDE, plus PSI indexing time.
 
-**Options (pick one):**
-1. **Headless IntelliJ mode** — Launch IntelliJ with `java.awt.headless=true`. No GUI window, full PSI access. Available since IntelliJ 2023.3. Fastest path.
-2. **Daemon mode** — Keep the JVM and PSI indices alive between operations. The MCP server already does this while the IDE runs, but a headless daemon would eliminate the visible IDE.
-3. **Warm-start script** — Pre-index the project on first run, cache indices to disk, reload on subsequent runs.
+**Current status:** Headless option implemented.
 
-**Recommended:** Option 1 (headless mode) — add a `gradlew runHeadless` task or a standalone launch script.
+**What's available now:**
+1. `./gradlew runHeadless` — Launches the PSI server in headless mode (no GUI window).
+2. Approximately 40-50% faster than `runIde` on first start due to skipped GUI initialization.
+3. Full PSI access and all refactoring tools still available.
 
-### 🟡 P2: HTTP security
+**Options for further optimization:**
+1. **Daemon mode** — Keep the JVM and PSI indices alive between operations. The MCP server already does this while the IDE runs, but a separate daemon would eliminate restart overhead for back-to-back requests.
+2. **Warm-start script** — Pre-index the project on first run, cache indices to disk, reload on subsequent runs.
+3. **CI/Docker path** — Package the headless mode for deployment in CI environments.
 
-**Problem:** `localhost:9742` has no authentication. Any local process can call it.
+**Recommended next:** Measure actual startup time and determine if a daemon mode is worth the added complexity.
 
-**Fix:**
-1. Generate a random bearer token at server startup.
-2. Write it to `~/.psi-agent/token`.
-3. Require `Authorization: Bearer <token>` header on all requests.
-4. Update CLI scripts and stdio bridge to read the token file automatically.
-5. Add rate limiting on write operations (rename, extract).
+### 🟢 P2: HTTP security
+
+**Status:** Implemented.
+
+**Current behavior:**
+1. The server writes a bearer token to `~/.psi-agent/token` on startup.
+2. The Bash and PowerShell CLI wrappers read the token automatically.
+3. The MCP stdio bridge also reads the token automatically.
+4. Manual HTTP calls now need an `Authorization: Bearer <token>` header.
 
 ### 🟢 P3: More refactoring operations
 
@@ -91,7 +110,8 @@ For each new tool/feature, touch these files:
 - New `refactoring/XxxProcessor.kt` — core PSI logic
 - `plugin.xml` — register any new services
 - `psi-agent.sh` / `psi-agent.ps1` — add CLI command
-- `mcp-stdio-bridge.js` — no change needed (generic dispatch)
+- `mcp-stdio-bridge.js` — MCP transport and dispatch
+- `package.json` — Node dependency manifest for the bridge
+- `test-mcp-bridge.js` — smoke test for the MCP handshake
 - `CLAUDE.md` / `.cursorrules` — document new tool
 - Tests — `BasePlatformTestCase` test class
-

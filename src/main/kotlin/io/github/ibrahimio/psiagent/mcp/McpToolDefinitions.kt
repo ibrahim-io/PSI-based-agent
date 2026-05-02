@@ -11,6 +11,9 @@ object McpToolDefinitions {
             "name" to "psi_search",
             "description" to "Search for code elements (methods, classes, fields) in the open IntelliJ project using the PSI index. " +
                     "Supports glob wildcards (* and ?). Returns file paths, line numbers, qualified names, and code snippets.",
+            "annotations" to mapOf(
+                "readOnlyHint" to true
+            ),
             "inputSchema" to mapOf(
                 "type" to "object",
                 "properties" to mapOf(
@@ -54,6 +57,9 @@ object McpToolDefinitions {
             "name" to "psi_find_usages",
             "description" to "Find all usages (call sites, references) of a method across the entire project using the PSI index. " +
                     "Returns file paths, line numbers, and code snippets for each usage.",
+            "annotations" to mapOf(
+                "readOnlyHint" to true
+            ),
             "inputSchema" to mapOf(
                 "type" to "object",
                 "properties" to mapOf(
@@ -71,4 +77,3 @@ object McpToolDefinitions {
         )
     )
 }
-
