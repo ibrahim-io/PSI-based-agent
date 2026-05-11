@@ -20,6 +20,20 @@ function startMockBackend() {
                   annotations: { readOnlyHint: true },
                   inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
                 },
+                {
+                  name: 'psi_change_signature',
+                  description: 'Change a Java method signature',
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      file: { type: 'string' },
+                      method_name: { type: 'string' },
+                      new_return_type: { type: 'string' },
+                      new_parameters: { type: 'array' },
+                    },
+                    required: ['file', 'method_name', 'new_return_type', 'new_parameters'],
+                  },
+                },
               ],
             })
           );
@@ -139,6 +153,52 @@ function sendMessage(proc, message) {
 
   if (!toolsResponse.result || !Array.isArray(toolsResponse.result.tools) || toolsResponse.result.tools.length === 0) {
     throw new Error(`Bad tools/list response: ${JSON.stringify(toolsResponse, null, 2)}`);
+  }
+
+  const toolNames = toolsResponse.result.tools.map((tool) => tool.name);
+  if (!toolNames.includes('psi_change_signature')) {
+    throw new Error(`Expected psi_change_signature in tools/list: ${JSON.stringify(toolNames, null, 2)}`);
+  }
+
+  sendMessage(bridge, {
+    jsonrpc: '2.0',
+    id: 3,
+    method: 'tools/call',
+    params: {
+      name: 'psi_change_signature',
+      arguments: {
+        file: 'src/main/java/Foo.java',
+        method_name: 'sum',
+        new_return_type: 'long',
+        new_parameters: [
+          { type: 'int', name: 'a' },
+          { type: 'int', name: 'b' },
+        ],
+      },
+    },
+  });
+
+  const callResponse = await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(`Timed out waiting for tools/call response\n${stderr}`)), 10000);
+
+    const interval = setInterval(() => {
+      const call = messages.find((m) => m.id === 3);
+      if (call) {
+        clearTimeout(timeout);
+        clearInterval(interval);
+        resolve(call);
+      }
+    }, 50);
+
+    bridge.on('exit', (code) => {
+      clearTimeout(timeout);
+      clearInterval(interval);
+      reject(new Error(`Bridge exited with code ${code}\n${stderr}`));
+    });
+  });
+
+  if (!callResponse.result || !Array.isArray(callResponse.result.content)) {
+    throw new Error(`Bad tools/call response: ${JSON.stringify(callResponse, null, 2)}`);
   }
 
   bridge.stdin.end();
