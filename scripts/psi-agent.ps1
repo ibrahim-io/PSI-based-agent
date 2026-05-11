@@ -16,6 +16,7 @@
     .\scripts\psi-agent.ps1 search "get*" -Type method
     .\scripts\psi-agent.ps1 rename src/main/java/Foo.java calculate compute
     .\scripts\psi-agent.ps1 inline-method src/main/java/Foo.java calculate
+    .\scripts\psi-agent.ps1 introduce-variable src/main/java/Foo.java sum 4 16 4 20
     .\scripts\psi-agent.ps1 find-usages processOrder
     .\scripts\psi-agent.ps1 move-class src/main/java/Foo.java com.example.moved
     .\scripts\psi-agent.ps1 health
@@ -76,6 +77,8 @@ Commands:
   search <query> [-Type method|class|all]     Search code elements
   rename <file> <old-name> <new-name>         Rename and update usages
   inline-method <file> <method-name>         Inline a simple method/function
+  introduce-variable <file> <variable-name> <start-line> <start-column> <end-line> <end-column>
+                                               Introduce a local variable from a selected expression
   find-usages <method-name> [-Class name]     Find all references
   move-class <file> <target-package>          Move a class/object to another package
   health                                       Check server status
@@ -121,6 +124,16 @@ switch ($Command) {
     "inline-method" {
         if ($Args.Count -lt 2) { Write-Error "inline-method requires <file> <method-name>"; exit 1 }
         Invoke-PsiPost "/api/inline-method" @{ file = $Args[0]; method_name = $Args[1] }
+    }
+    "introduce-variable" {
+        if ($Args.Count -lt 6) { Write-Error "introduce-variable requires <file> <variable-name> <start-line> <start-column> <end-line> <end-column>"; exit 1 }
+        $file = $Args[0]
+        $variableName = $Args[1]
+        $startLine = [int]$Args[2]
+        $startColumn = [int]$Args[3]
+        $endLine = [int]$Args[4]
+        $endColumn = [int]$Args[5]
+        Invoke-PsiPost "/api/introduce-variable" @{ file = $file; variable_name = $variableName; start_line = $startLine; start_column = $startColumn; end_line = $endLine; end_column = $endColumn }
     }
     "find-usages" {
         $methodName = $Args[0]

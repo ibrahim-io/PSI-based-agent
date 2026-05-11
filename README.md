@@ -186,6 +186,9 @@ Wraps IntelliJ's extract-method refactoring for a selected line range. The Java 
 ### `InlineMethodProcessor`
 Performs a PSI-based inline for simple Java/Kotlin methods and functions. The current implementation is intentionally conservative: it supports zero-parameter methods/functions with a single return expression or expression body, then replaces usage sites and removes the original declaration.
 
+### `IntroduceVariableProcessor`
+Introduces a local variable from a precisely selected Java or Kotlin expression. The current prototype is selection-based and conservative: it requires a precise line/column range, inserts the declaration immediately before the containing statement, and replaces the selected expression with the new variable name.
+
 ### `MoveClassProcessor`
 Uses IntelliJ's move-class refactoring engine to move Java or Kotlin classes/objects to another package. The processor resolves or creates the target package directory, then lets IntelliJ update imports and references across the project.
 

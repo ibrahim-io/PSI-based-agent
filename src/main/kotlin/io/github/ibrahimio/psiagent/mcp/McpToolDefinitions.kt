@@ -122,6 +122,40 @@ object McpToolDefinitions {
             )
         ),
         mapOf(
+            "name" to "psi_introduce_variable",
+            "description" to "Introduce a local variable from a selected Java or Kotlin expression using PSI-guided refactoring. Requires a precise line/column range that selects the expression to extract.",
+            "inputSchema" to mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "file" to mapOf(
+                        "type" to "string",
+                        "description" to "Path to the file containing the expression"
+                    ),
+                    "variable_name" to mapOf(
+                        "type" to "string",
+                        "description" to "Name for the new local variable"
+                    ),
+                    "start_line" to mapOf(
+                        "type" to "integer",
+                        "description" to "Line number where the expression selection starts (1-based)"
+                    ),
+                    "start_column" to mapOf(
+                        "type" to "integer",
+                        "description" to "Column where the expression selection starts (1-based)"
+                    ),
+                    "end_line" to mapOf(
+                        "type" to "integer",
+                        "description" to "Line number where the expression selection ends (1-based, inclusive)"
+                    ),
+                    "end_column" to mapOf(
+                        "type" to "integer",
+                        "description" to "Column where the expression selection ends (1-based, inclusive)"
+                    )
+                ),
+                "required" to listOf("file", "variable_name", "start_line", "start_column", "end_line", "end_column")
+            )
+        ),
+        mapOf(
             "name" to "psi_move_class",
             "description" to "Move a Java or Kotlin class/object to a different package using IntelliJ's PSI refactoring engine. Automatically updates imports and references.",
             "inputSchema" to mapOf(

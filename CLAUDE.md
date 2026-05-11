@@ -194,6 +194,18 @@ Or via CLI:
 ./scripts/psi-agent.sh move-class src/main/java/Foo.java com.example.moved
 ```
 
+### 7. PSI Introduce Variable — lift a selected Java/Kotlin expression into a local variable
+```bash
+curl -X POST http://127.0.0.1:9742/api/introduce-variable \
+  -H "Content-Type: application/json" \
+  -d '{"file": "src/main/java/Foo.java", "variable_name": "sum", "start_line": 4, "start_column": 16, "end_line": 4, "end_column": 20}'
+```
+
+Or via CLI:
+```bash
+./scripts/psi-agent.sh introduce-variable src/main/java/Foo.java sum 4 16 4 20
+```
+
 ## When to use these tools
 
 - Use `psi_search` instead of `grep` when you need to find method/class/field/variable definitions with full qualified names and line numbers.
@@ -202,10 +214,11 @@ Or via CLI:
 - Use `psi_find_usages` to understand where any symbol is used before making changes.
 - Use `psi_extract_method` to refactor complex methods by extracting code blocks into their own methods.
 - Use `psi_inline_method` to collapse simple helper methods/functions into their call sites.
+- Use `psi_introduce_variable` to lift a precise Java/Kotlin expression into a new local variable.
 - Use `psi_move_class` to move classes or Kotlin objects into another package while keeping imports/references updated.
 - These tools work on both **Java** and **Kotlin** files.
 - Treat `psi_search` and `psi_find_usages` as read-only operations.
-- Treat `psi_rename`, `psi_extract_method`, `psi_inline_method`, and `psi_move_class` as write operations that change files.
+- Treat `psi_rename`, `psi_extract_method`, `psi_inline_method`, `psi_introduce_variable`, and `psi_move_class` as write operations that change files.
 
 ## MCP Protocol
 

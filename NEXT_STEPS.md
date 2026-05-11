@@ -70,20 +70,19 @@ Still to harden:
 
 ### 🟢 P3: More refactoring operations
 
-**Status:** `psi_extract_method`, `psi_inline_method`, and `psi_move_class` are now implemented and exposed through MCP/HTTP/CLI.
+**Status:** `psi_extract_method`, `psi_inline_method`, `psi_introduce_variable`, and `psi_move_class` are now implemented and exposed through MCP/HTTP/CLI.
 
 **What's available now:**
-1. `psi_extract_method` — Extract code blocks into new methods/functions.
-2. Full support in MCP, HTTP, and CLI (bash/PowerShell).
-3. Unit test mode blocks extract-method because the full IDE pipeline is required.
-4. Bad line ranges and blank method names are rejected before refactoring starts.
+1. `psi_extract_method`, `psi_inline_method`, `psi_introduce_variable`, and `psi_move_class` are exposed through MCP, HTTP, and CLI (bash/PowerShell).
+2. Unit test mode blocks extract-method because the full IDE pipeline is required.
+3. Bad line ranges and blank method names are rejected before refactoring starts.
 
 **Current expansion:**
 1. Validate edge cases for files with multiple top-level declarations.
 2. Confirm Kotlin light-class moves in a real IDE session.
-3. Expand `psi_inline_method` beyond the current conservative zero-parameter/single-return prototype.
+3. Expand `psi_inline_method` and `psi_introduce_variable` beyond their current conservative prototypes.
 
-**Next step:** run extract-method in a real IDE session (`runIde`/`runHeadless`) to validate Java + Kotlin behavior.
+**Next step:** run extract-method and introduce-variable in a real IDE session (`runIde`/`runHeadless`) to validate Java + Kotlin behavior.
 
 **Implementation pattern established:**
 Each new refactoring tool follows this checklist:
@@ -98,7 +97,6 @@ Each new refactoring tool follows this checklist:
 | Tool | IntelliJ Processor | Input | Complexity |
 |---|---|---|---|
 | `psi_change_signature` | `ChangeSignatureProcessor` | method, new params, new return type | high |
-| `psi_introduce_variable` | `IntroduceVariableHandler` | file, expression range, variable name | high |
 
 
 ### 🟢 P4: Real IDE installation

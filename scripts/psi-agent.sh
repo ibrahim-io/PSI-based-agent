@@ -13,6 +13,7 @@
 #   ./scripts/psi-agent.sh search "getUserById" [--type method|class|all]
 #   ./scripts/psi-agent.sh rename <file> <old-name> <new-name>
 #   ./scripts/psi-agent.sh inline-method <file> <method-name>
+#   ./scripts/psi-agent.sh introduce-variable <file> <variable-name> <start-line> <start-column> <end-line> <end-column>
 #   ./scripts/psi-agent.sh find-usages <method-name> [--class ClassName]
 #   ./scripts/psi-agent.sh move-class <file> <target-package>
 #   ./scripts/psi-agent.sh health
@@ -89,6 +90,13 @@ Commands:
       Examples:
         psi-agent.sh inline-method src/main/java/Foo.java calculate
         psi-agent.sh inline-method src/main/kotlin/Bar.kt greet
+
+   introduce-variable <file> <variable-name> <start-line> <start-column> <end-line> <end-column>
+       Introduce a local variable from a selected Java or Kotlin expression.
+       The range must precisely cover the expression to extract.
+       Examples:
+         psi-agent.sh introduce-variable src/main/java/Foo.java sum 4 16 4 20
+         psi-agent.sh introduce-variable src/main/kotlin/Bar.kt total 6 16 6 24
 
   find-usages <method-name> [--class ClassName]
       Find all call sites / references to a method.
@@ -192,6 +200,25 @@ cmd_inline_method() {
         post_json "/api/inline-method" "{\"file\": \"${file}\", \"method_name\": \"${method_name}\"}"
 }
 
+cmd_introduce_variable() {
+    check_server
+    local file="${1:-}"
+    local variable_name="${2:-}"
+    local start_line="${3:-}"
+    local start_column="${4:-}"
+    local end_line="${5:-}"
+    local end_column="${6:-}"
+
+    if [[ -z "$file" || -z "$variable_name" || -z "$start_line" || -z "$start_column" || -z "$end_line" || -z "$end_column" ]]; then
+        echo "ERROR: introduce-variable requires <file> <variable-name> <start-line> <start-column> <end-line> <end-column>" >&2
+        exit 1
+    fi
+
+    post_json "/api/introduce-variable" "{\"file\": \"${file}\", \"variable_name\": \"${variable_name}\", \"start_line\": ${start_line}, \"start_column\": ${start_column}, \"end_line\": ${end_line}, \"end_column\": ${end_column}}" | \
+        python3 -m json.tool 2>/dev/null || \
+        post_json "/api/introduce-variable" "{\"file\": \"${file}\", \"variable_name\": \"${variable_name}\", \"start_line\": ${start_line}, \"start_column\": ${start_column}, \"end_line\": ${end_line}, \"end_column\": ${end_column}}"
+}
+
 cmd_find_usages() {
     check_server
     local method_name="${1:-}"
@@ -267,6 +294,7 @@ case "$COMMAND" in
     search)       cmd_search "$@" ;;
     rename)       cmd_rename "$@" ;;
     inline-method) cmd_inline_method "$@" ;;
+    introduce-variable) cmd_introduce_variable "$@" ;;
     find-usages)  cmd_find_usages "$@" ;;
     move-class)   cmd_move_class "$@" ;;
     extract-method) cmd_extract_method "$@" ;;

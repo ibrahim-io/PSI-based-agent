@@ -52,6 +52,46 @@ curl -X POST http://127.0.0.1:9742/api/rename \
 }
 ```
 
+## Additional PSI Refactor
+
+### Introduce a Variable
+Use a precise expression range (line + column) to lift a Java/Kotlin expression into a local variable.
+
+#### CLI
+```bash
+./scripts/psi-agent.sh introduce-variable src/main/java/Foo.java sum 4 16 4 20
+```
+
+#### HTTP API
+```bash
+curl -X POST http://127.0.0.1:9742/api/introduce-variable \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(cat ~/.psi-agent/token)" \
+  -d '{
+    "file": "src/main/java/Foo.java",
+    "variable_name": "sum",
+    "start_line": 4,
+    "start_column": 16,
+    "end_line": 4,
+    "end_column": 20
+  }'
+```
+
+#### MCP
+```json
+{
+  "name": "psi_introduce_variable",
+  "arguments": {
+    "file": "src/main/java/Foo.java",
+    "variable_name": "sum",
+    "start_line": 4,
+    "start_column": 16,
+    "end_line": 4,
+    "end_column": 20
+  }
+}
+```
+
 ## Examples by Type
 
 ### Rename a Method

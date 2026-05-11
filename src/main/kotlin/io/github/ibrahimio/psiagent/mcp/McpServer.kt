@@ -12,6 +12,7 @@ import com.sun.net.httpserver.HttpServer
 import io.github.ibrahimio.psiagent.refactoring.MethodRenamer
 import io.github.ibrahimio.psiagent.refactoring.MethodExtractor
 import io.github.ibrahimio.psiagent.refactoring.InlineMethodProcessor
+import io.github.ibrahimio.psiagent.refactoring.IntroduceVariableProcessor
 import io.github.ibrahimio.psiagent.refactoring.MoveClassProcessor
 import io.github.ibrahimio.psiagent.search.PsiCodeSearcher
 import java.io.IOException
@@ -48,6 +49,7 @@ class McpServer(private val project: Project) {
                 createContext("/api/search") { handleSearch(it) }
                 createContext("/api/rename") { handleRename(it) }
                 createContext("/api/inline-method") { handleInlineMethod(it) }
+                createContext("/api/introduce-variable") { handleIntroduceVariable(it) }
                 createContext("/api/find-usages") { handleFindUsages(it) }
                 createContext("/api/health") { handleHealth(it) }
                 createContext("/api/move-class") { handleMoveClass(it) }
@@ -95,12 +97,13 @@ class McpServer(private val project: Project) {
                 "psi_search" -> executeSearch(exchange, params)
                 "psi_rename" -> executeRename(exchange, params)
                 "psi_inline_method" -> executeInlineMethod(exchange, params)
+                "psi_introduce_variable" -> executeIntroduceVariable(exchange, params)
                 "psi_find_usages" -> executeFindUsages(exchange, params)
                 "psi_extract_method" -> executeExtractMethod(exchange, params)
                 "psi_move_class" -> executeMoveClass(exchange, params)
                 else -> sendJson(exchange, 400, mapOf(
                     "error" to "Unknown tool: $toolName",
-                    "available" to listOf("psi_search", "psi_rename", "psi_inline_method", "psi_find_usages", "psi_extract_method", "psi_move_class")
+                    "available" to listOf("psi_search", "psi_rename", "psi_inline_method", "psi_introduce_variable", "psi_find_usages", "psi_extract_method", "psi_move_class")
                 ))
             }
         } catch (e: Exception) {
@@ -153,6 +156,17 @@ class McpServer(private val project: Project) {
         val body = exchange.requestBody.bufferedReader().readText()
         val params = JsonParser.parseString(body).asJsonObject
         executeInlineMethod(exchange, params)
+    }
+
+    private fun handleIntroduceVariable(exchange: HttpExchange) {
+        if (!requireAuth(exchange)) return
+        if (exchange.requestMethod != "POST") {
+            sendJson(exchange, 405, mapOf("error" to "POST required"))
+            return
+        }
+        val body = exchange.requestBody.bufferedReader().readText()
+        val params = JsonParser.parseString(body).asJsonObject
+        executeIntroduceVariable(exchange, params)
     }
 
     private fun handleFindUsages(exchange: HttpExchange) {
@@ -259,6 +273,39 @@ class McpServer(private val project: Project) {
 
         sendJson(exchange, 200, mapOf(
             "tool" to "psi_inline_method",
+            "result" to result
+        ))
+    }
+
+    private fun executeIntroduceVariable(exchange: HttpExchange, params: JsonObject) {
+        val file = params.get("file")?.asString
+        val variableName = params.get("variable_name")?.asString
+        val startLine = params.get("start_line")?.asInt
+        val startColumn = params.get("start_column")?.asInt
+        val endLine = params.get("end_line")?.asInt
+        val endColumn = params.get("end_column")?.asInt
+
+        if (file.isNullOrBlank() || variableName.isNullOrBlank() || startLine == null || startColumn == null || endLine == null || endColumn == null) {
+            sendJson(exchange, 400, mapOf(
+                "error" to "Missing required parameters: file, variable_name, start_line, start_column, end_line, end_column"
+            ))
+            return
+        }
+
+        val resolvedFile = if (file.startsWith("/") || file.contains(":")) {
+            file
+        } else {
+            "${project.basePath}/$file"
+        }
+
+        var result: Any? = null
+        ApplicationManager.getApplication().invokeAndWait {
+            val introducer = IntroduceVariableProcessor(project)
+            result = introducer.introduceVariable(resolvedFile, variableName, startLine, startColumn, endLine, endColumn)
+        }
+
+        sendJson(exchange, 200, mapOf(
+            "tool" to "psi_introduce_variable",
             "result" to result
         ))
     }
