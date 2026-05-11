@@ -70,7 +70,7 @@ Still to harden:
 
 ### 🟢 P3: More refactoring operations
 
-**Status:** `psi_extract_method` is wired up for Java and Kotlin; `psi_move_class` is now implemented and exposed through MCP/HTTP/CLI.
+**Status:** `psi_extract_method`, `psi_inline_method`, and `psi_move_class` are now implemented and exposed through MCP/HTTP/CLI.
 
 **What's available now:**
 1. `psi_extract_method` — Extract code blocks into new methods/functions.
@@ -79,9 +79,9 @@ Still to harden:
 4. Bad line ranges and blank method names are rejected before refactoring starts.
 
 **Current expansion:**
-1. `psi_move_class` — move Java/Kotlin classes or objects to another package.
-2. Validate edge cases for files with multiple top-level declarations.
-3. Confirm Kotlin light-class moves in a real IDE session.
+1. Validate edge cases for files with multiple top-level declarations.
+2. Confirm Kotlin light-class moves in a real IDE session.
+3. Expand `psi_inline_method` beyond the current conservative zero-parameter/single-return prototype.
 
 **Next step:** run extract-method in a real IDE session (`runIde`/`runHeadless`) to validate Java + Kotlin behavior.
 
@@ -97,7 +97,6 @@ Each new refactoring tool follows this checklist:
 
 | Tool | IntelliJ Processor | Input | Complexity |
 |---|---|---|---|
-| `psi_inline_method` | `InlineMethodProcessor` | file, method name | medium |
 | `psi_change_signature` | `ChangeSignatureProcessor` | method, new params, new return type | high |
 | `psi_introduce_variable` | `IntroduceVariableHandler` | file, expression range, variable name | high |
 

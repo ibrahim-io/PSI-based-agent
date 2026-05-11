@@ -162,5 +162,4 @@ With universal renaming in place, the next improvements could be:
 
 ---
 
-**The aim is achieved: Every single type of node on the PSI is now renamable.** 🎉
-
+**The aim is achieved: Every single type of node on the PSI is now renamable.** 

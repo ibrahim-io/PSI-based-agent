@@ -15,6 +15,7 @@
     .\scripts\psi-agent.ps1 search "getUserById"
     .\scripts\psi-agent.ps1 search "get*" -Type method
     .\scripts\psi-agent.ps1 rename src/main/java/Foo.java calculate compute
+    .\scripts\psi-agent.ps1 inline-method src/main/java/Foo.java calculate
     .\scripts\psi-agent.ps1 find-usages processOrder
     .\scripts\psi-agent.ps1 move-class src/main/java/Foo.java com.example.moved
     .\scripts\psi-agent.ps1 health
@@ -74,6 +75,7 @@ Usage: psi-agent.ps1 <command> [arguments]
 Commands:
   search <query> [-Type method|class|all]     Search code elements
   rename <file> <old-name> <new-name>         Rename and update usages
+  inline-method <file> <method-name>         Inline a simple method/function
   find-usages <method-name> [-Class name]     Find all references
   move-class <file> <target-package>          Move a class/object to another package
   health                                       Check server status
@@ -115,6 +117,10 @@ switch ($Command) {
     "rename" {
         if ($Args.Count -lt 3) { Write-Error "rename requires <file> <old-name> <new-name>"; exit 1 }
         Invoke-PsiPost "/api/rename" @{ file = $Args[0]; old_name = $Args[1]; new_name = $Args[2] }
+    }
+    "inline-method" {
+        if ($Args.Count -lt 2) { Write-Error "inline-method requires <file> <method-name>"; exit 1 }
+        Invoke-PsiPost "/api/inline-method" @{ file = $Args[0]; method_name = $Args[1] }
     }
     "find-usages" {
         $methodName = $Args[0]

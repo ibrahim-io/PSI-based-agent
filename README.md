@@ -183,6 +183,9 @@ Resolves a symbol from either a definition site or a usage site under the caret,
 ### `MethodExtractor`
 Wraps IntelliJ's extract-method refactoring for a selected line range. The Java path uses `ExtractMethodHandler`. Kotlin extraction is now wired through `ExtractKotlinFunctionHandler` but still needs validation in a real IDE session. Extract-method is disabled in unit test mode because the full IDE refactoring pipeline is required, and the helper now rejects blank method names and invalid line ranges before PSI work begins.
 
+### `InlineMethodProcessor`
+Performs a PSI-based inline for simple Java/Kotlin methods and functions. The current implementation is intentionally conservative: it supports zero-parameter methods/functions with a single return expression or expression body, then replaces usage sites and removes the original declaration.
+
 ### `MoveClassProcessor`
 Uses IntelliJ's move-class refactoring engine to move Java or Kotlin classes/objects to another package. The processor resolves or creates the target package directory, then lets IntelliJ update imports and references across the project.
 
@@ -260,6 +263,7 @@ The CLI scripts automatically read `~/.psi-agent/token` or the `PSI_AGENT_TOKEN`
 # Bash (Linux/macOS/Git Bash)
 ./scripts/psi-agent.sh search "getUserById" --type method
 ./scripts/psi-agent.sh rename src/Foo.java calculate compute
+./scripts/psi-agent.sh inline-method src/Foo.java calculate
 ./scripts/psi-agent.sh find-usages processOrder --class OrderService
 ./scripts/psi-agent.sh move-class src/Foo.java com.example.moved
 ./scripts/psi-agent.sh extract-method src/Foo.java calculateTotal 10 25
@@ -268,6 +272,7 @@ The CLI scripts automatically read `~/.psi-agent/token` or the `PSI_AGENT_TOKEN`
 # PowerShell (Windows)
 .\scripts\psi-agent.ps1 search "getUserById" -Type method
 .\scripts\psi-agent.ps1 rename src/Foo.java calculate compute
+.\scripts\psi-agent.ps1 inline-method src/Foo.java calculate
 .\scripts\psi-agent.ps1 find-usages processOrder -Class OrderService
 .\scripts\psi-agent.ps1 extract-method src/Foo.java calculateTotal 10 25
 ```

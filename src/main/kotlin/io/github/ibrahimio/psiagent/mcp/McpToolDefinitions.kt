@@ -56,6 +56,24 @@ object McpToolDefinitions {
             )
         ),
         mapOf(
+            "name" to "psi_inline_method",
+            "description" to "Inline a simple Java or Kotlin method/function at its usage sites using PSI. Currently supports zero-parameter methods/functions with a single return expression or expression body.",
+            "inputSchema" to mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "file" to mapOf(
+                        "type" to "string",
+                        "description" to "Path to the file containing the method to inline"
+                    ),
+                    "method_name" to mapOf(
+                        "type" to "string",
+                        "description" to "Name of the method/function to inline"
+                    )
+                ),
+                "required" to listOf("file", "method_name")
+            )
+        ),
+        mapOf(
             "name" to "psi_find_usages",
             "description" to "Find all usages (call sites, references) of any symbol (method, class, variable, field, property, etc.) " +
                     "across the entire project using the PSI index. Returns file paths, line numbers, and code snippets for each usage.",

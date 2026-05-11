@@ -12,6 +12,7 @@
 # Usage:
 #   ./scripts/psi-agent.sh search "getUserById" [--type method|class|all]
 #   ./scripts/psi-agent.sh rename <file> <old-name> <new-name>
+#   ./scripts/psi-agent.sh inline-method <file> <method-name>
 #   ./scripts/psi-agent.sh find-usages <method-name> [--class ClassName]
 #   ./scripts/psi-agent.sh move-class <file> <target-package>
 #   ./scripts/psi-agent.sh health
@@ -82,6 +83,12 @@ Commands:
       Examples:
         psi-agent.sh rename src/main/java/Foo.java calculate compute
         psi-agent.sh rename src/main/kotlin/Bar.kt oldFun newFun
+
+  inline-method <file> <method-name>
+      Inline a simple method/function at its usage sites using PSI.
+      Examples:
+        psi-agent.sh inline-method src/main/java/Foo.java calculate
+        psi-agent.sh inline-method src/main/kotlin/Bar.kt greet
 
   find-usages <method-name> [--class ClassName]
       Find all call sites / references to a method.
@@ -170,6 +177,21 @@ cmd_rename() {
         post_json "/api/rename" "{\"file\": \"${file}\", \"old_name\": \"${old_name}\", \"new_name\": \"${new_name}\"}"
 }
 
+cmd_inline_method() {
+    check_server
+    local file="${1:-}"
+    local method_name="${2:-}"
+
+    if [[ -z "$file" || -z "$method_name" ]]; then
+        echo "ERROR: inline-method requires <file> <method-name>" >&2
+        exit 1
+    fi
+
+    post_json "/api/inline-method" "{\"file\": \"${file}\", \"method_name\": \"${method_name}\"}" | \
+        python3 -m json.tool 2>/dev/null || \
+        post_json "/api/inline-method" "{\"file\": \"${file}\", \"method_name\": \"${method_name}\"}"
+}
+
 cmd_find_usages() {
     check_server
     local method_name="${1:-}"
@@ -244,6 +266,7 @@ shift
 case "$COMMAND" in
     search)       cmd_search "$@" ;;
     rename)       cmd_rename "$@" ;;
+    inline-method) cmd_inline_method "$@" ;;
     find-usages)  cmd_find_usages "$@" ;;
     move-class)   cmd_move_class "$@" ;;
     extract-method) cmd_extract_method "$@" ;;

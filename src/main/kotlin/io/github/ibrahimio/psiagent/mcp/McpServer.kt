@@ -11,6 +11,7 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import io.github.ibrahimio.psiagent.refactoring.MethodRenamer
 import io.github.ibrahimio.psiagent.refactoring.MethodExtractor
+import io.github.ibrahimio.psiagent.refactoring.InlineMethodProcessor
 import io.github.ibrahimio.psiagent.refactoring.MoveClassProcessor
 import io.github.ibrahimio.psiagent.search.PsiCodeSearcher
 import java.io.IOException
@@ -46,6 +47,7 @@ class McpServer(private val project: Project) {
                 // Convenience REST endpoints (easier for shell scripts)
                 createContext("/api/search") { handleSearch(it) }
                 createContext("/api/rename") { handleRename(it) }
+                createContext("/api/inline-method") { handleInlineMethod(it) }
                 createContext("/api/find-usages") { handleFindUsages(it) }
                 createContext("/api/health") { handleHealth(it) }
                 createContext("/api/move-class") { handleMoveClass(it) }
@@ -92,12 +94,13 @@ class McpServer(private val project: Project) {
             when (toolName) {
                 "psi_search" -> executeSearch(exchange, params)
                 "psi_rename" -> executeRename(exchange, params)
+                "psi_inline_method" -> executeInlineMethod(exchange, params)
                 "psi_find_usages" -> executeFindUsages(exchange, params)
                 "psi_extract_method" -> executeExtractMethod(exchange, params)
                 "psi_move_class" -> executeMoveClass(exchange, params)
                 else -> sendJson(exchange, 400, mapOf(
                     "error" to "Unknown tool: $toolName",
-                    "available" to listOf("psi_search", "psi_rename", "psi_find_usages", "psi_extract_method", "psi_move_class")
+                    "available" to listOf("psi_search", "psi_rename", "psi_inline_method", "psi_find_usages", "psi_extract_method", "psi_move_class")
                 ))
             }
         } catch (e: Exception) {
@@ -139,6 +142,17 @@ class McpServer(private val project: Project) {
         val body = exchange.requestBody.bufferedReader().readText()
         val params = JsonParser.parseString(body).asJsonObject
         executeRename(exchange, params)
+    }
+
+    private fun handleInlineMethod(exchange: HttpExchange) {
+        if (!requireAuth(exchange)) return
+        if (exchange.requestMethod != "POST") {
+            sendJson(exchange, 405, mapOf("error" to "POST required"))
+            return
+        }
+        val body = exchange.requestBody.bufferedReader().readText()
+        val params = JsonParser.parseString(body).asJsonObject
+        executeInlineMethod(exchange, params)
     }
 
     private fun handleFindUsages(exchange: HttpExchange) {
@@ -218,6 +232,33 @@ class McpServer(private val project: Project) {
 
         sendJson(exchange, 200, mapOf(
             "tool" to "psi_rename",
+            "result" to result
+        ))
+    }
+
+    private fun executeInlineMethod(exchange: HttpExchange, params: JsonObject) {
+        val file = params.get("file")?.asString
+        val methodName = params.get("method_name")?.asString
+
+        if (file.isNullOrBlank() || methodName.isNullOrBlank()) {
+            sendJson(exchange, 400, mapOf("error" to "Missing required parameters: file, method_name"))
+            return
+        }
+
+        val resolvedFile = if (file.startsWith("/") || file.contains(":")) {
+            file
+        } else {
+            "${project.basePath}/$file"
+        }
+
+        var result: Any? = null
+        ApplicationManager.getApplication().invokeAndWait {
+            val inliner = InlineMethodProcessor(project)
+            result = inliner.inlineMethod(resolvedFile, methodName)
+        }
+
+        sendJson(exchange, 200, mapOf(
+            "tool" to "psi_inline_method",
             "result" to result
         ))
     }

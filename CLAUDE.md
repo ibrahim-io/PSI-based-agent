@@ -170,6 +170,30 @@ Or via CLI:
 ./scripts/psi-agent.sh extract-method src/main/java/Foo.java compute 10 25
 ```
 
+### 5. PSI Inline Method — inline a simple method/function at its usage sites
+```bash
+curl -X POST http://127.0.0.1:9742/api/inline-method \
+  -H "Content-Type: application/json" \
+  -d '{"file": "src/main/java/Foo.java", "method_name": "calculate"}'
+```
+
+Or via CLI:
+```bash
+./scripts/psi-agent.sh inline-method src/main/java/Foo.java calculate
+```
+
+### 6. PSI Move Class — move a class/object to another package
+```bash
+curl -X POST http://127.0.0.1:9742/api/move-class \
+  -H "Content-Type: application/json" \
+  -d '{"file": "src/main/java/Foo.java", "target_package": "com.example.moved"}'
+```
+
+Or via CLI:
+```bash
+./scripts/psi-agent.sh move-class src/main/java/Foo.java com.example.moved
+```
+
 ## When to use these tools
 
 - Use `psi_search` instead of `grep` when you need to find method/class/field/variable definitions with full qualified names and line numbers.
@@ -177,9 +201,11 @@ Or via CLI:
 - Use `psi_rename` from either the declaration site OR any usage site thanks to the universal symbol resolver.
 - Use `psi_find_usages` to understand where any symbol is used before making changes.
 - Use `psi_extract_method` to refactor complex methods by extracting code blocks into their own methods.
+- Use `psi_inline_method` to collapse simple helper methods/functions into their call sites.
+- Use `psi_move_class` to move classes or Kotlin objects into another package while keeping imports/references updated.
 - These tools work on both **Java** and **Kotlin** files.
 - Treat `psi_search` and `psi_find_usages` as read-only operations.
-- Treat `psi_rename` and `psi_extract_method` as write operations that change files.
+- Treat `psi_rename`, `psi_extract_method`, `psi_inline_method`, and `psi_move_class` as write operations that change files.
 
 ## MCP Protocol
 
