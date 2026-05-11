@@ -129,9 +129,14 @@ class ChangeSignatureProcessor(private val project: Project) {
             )
         }
 
-        val existingCount = method.parameterList.parametersCount
+        val oldParameters = method.parameterList.parameters.toList()
+        val usedOldIndexes = mutableSetOf<Int>()
+        val allowIndexFallback = newParameters.size == oldParameters.size
         val parameterInfos = newParameters.mapIndexed { index, parameter ->
-            val oldIndex = if (index < existingCount) index else -1
+            val oldIndex = matchOldParameterIndex(parameter, index, oldParameters, usedOldIndexes, allowIndexFallback)
+            if (oldIndex >= 0) {
+                usedOldIndexes.add(oldIndex)
+            }
             val parameterType = elementFactory.createTypeFromText(parameter.type, method)
             ParameterInfoImpl(oldIndex, parameter.name, parameterType, parameter.defaultValue, false).apply {
                 oldParameterIndex = oldIndex
@@ -177,7 +182,42 @@ class ChangeSignatureProcessor(private val project: Project) {
             )
         }
     }
+
+    private fun matchOldParameterIndex(
+        newParameter: ChangeSignatureParameter,
+        newIndex: Int,
+        oldParameters: List<com.intellij.psi.PsiParameter>,
+        usedOldIndexes: Set<Int>,
+        allowIndexFallback: Boolean
+    ): Int {
+        val byName = oldParameters.indexOfFirstIndexed { idx, old ->
+            old.name == newParameter.name && idx !in usedOldIndexes
+        }
+        if (byName >= 0) {
+            return byName
+        }
+
+        if (allowIndexFallback && newIndex in oldParameters.indices) {
+            val oldAtIndex = oldParameters[newIndex]
+            val sameType = oldAtIndex.type.canonicalText == newParameter.type
+            if (newIndex !in usedOldIndexes && sameType) {
+                return newIndex
+            }
+        }
+
+        return -1
+    }
+
+    private inline fun <T> List<T>.indexOfFirstIndexed(predicate: (Int, T) -> Boolean): Int {
+        for (i in indices) {
+            if (predicate(i, this[i])) return i
+        }
+        return -1
+    }
 }
+
+
+
 
 
 
