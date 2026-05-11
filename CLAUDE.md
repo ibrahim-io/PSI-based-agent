@@ -18,6 +18,26 @@ For native tool discovery with no manual setup:
 
 4. **Use the tools**: In Claude Code, the `psi_search`, `psi_rename`, and `psi_find_usages` tools are now available natively
 
+`psi_extract_method` is also wired into the server and bridge, and is being validated against Java and Kotlin projects.
+
+Kotlin extract-method is wired through ExtractKotlinFunctionHandler and has been tested on Kotlin code.
+
+Extract-method is blocked in unit test mode; validate it in a real IDE session (`runIde` or `runHeadless`).
+
+**MAJOR UPDATE: `psi_rename` now supports EVERY PSI node type**, including:
+- ✅ Methods and functions (Java/Kotlin)
+- ✅ Classes and interfaces (Java/Kotlin)
+- ✅ Fields and properties (Java/Kotlin)
+- ✅ Variables and parameters (Java/Kotlin)
+- ✅ Type aliases (Kotlin)
+- ✅ Any other renamable symbol in your code
+
+The shared resolver works from both declaration sites and usage sites, making it seamless to rename any symbol.
+
+`MethodExtractorTest.kt` covers Java and Kotlin extraction regressions.
+
+`MethodExtractor` validates blank method names and invalid line ranges before invoking PSI refactoring.
+
 That's it! No manual HTTP calls, no approval prompts.
 
 ## Server
@@ -64,56 +84,102 @@ If Claude Code is not discovering the tools automatically, fall back to the HTTP
 
 ## Available Tools
 
-### 1. PSI Search — find code elements by name
+### 1. PSI Search — find any code element by name
 ```bash
-# Search for methods matching a pattern (supports * and ? wildcards)
+# Search for methods matching a pattern
 curl -X POST http://127.0.0.1:9742/api/search \
   -H "Content-Type: application/json" \
   -d '{"query": "getUserById", "type": "method"}'
 
-# Search all element types
+# Search for classes
 curl -X POST http://127.0.0.1:9742/api/search \
   -H "Content-Type: application/json" \
-  -d '{"query": "Service", "type": "all"}'
+  -d '{"query": "Service", "type": "class"}'
+
+# Search all element types (methods, classes, fields, properties, etc.)
+curl -X POST http://127.0.0.1:9742/api/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "config*", "type": "all"}'
 ```
 
 Or via CLI:
 ```bash
 ./scripts/psi-agent.sh search "getUserById" --type method
+./scripts/psi-agent.sh search "config*" --type all
 ```
 
-### 2. PSI Rename — rename a method and update all usages
+### 2. PSI Rename — rename ANY symbol (methods, fields, variables, classes, properties, etc.)
 ```bash
+# Rename a method
 curl -X POST http://127.0.0.1:9742/api/rename \
   -H "Content-Type: application/json" \
   -d '{"file": "src/main/java/Foo.java", "old_name": "calculate", "new_name": "compute"}'
+
+# Rename a field
+curl -X POST http://127.0.0.1:9742/api/rename \
+  -H "Content-Type: application/json" \
+  -d '{"file": "src/main/java/Config.java", "old_name": "apiKey", "new_name": "secretKey"}'
+
+# Rename a Kotlin property
+curl -X POST http://127.0.0.1:9742/api/rename \
+  -H "Content-Type: application/json" \
+  -d '{"file": "src/main/kotlin/User.kt", "old_name": "firstName", "new_name": "givenName"}'
+
+# Rename a local variable
+curl -X POST http://127.0.0.1:9742/api/rename \
+  -H "Content-Type: application/json" \
+  -d '{"file": "src/main/java/Utils.java", "old_name": "temp", "new_name": "buffer"}'
 ```
 
 Or via CLI:
 ```bash
 ./scripts/psi-agent.sh rename src/main/java/Foo.java calculate compute
+./scripts/psi-agent.sh rename src/main/kotlin/User.kt firstName givenName
 ```
 
-### 3. PSI Find Usages — find all references to a method
+### 3. PSI Find Usages — find all references to any symbol
 ```bash
+# Find usages of a method
 curl -X POST http://127.0.0.1:9742/api/find-usages \
   -H "Content-Type: application/json" \
   -d '{"method_name": "processOrder", "class_name": "OrderService"}'
+
+# Find usages of a field or property
+curl -X POST http://127.0.0.1:9742/api/find-usages \
+  -H "Content-Type: application/json" \
+  -d '{"method_name": "apiKey"}'
 ```
 
 Or via CLI:
 ```bash
 ./scripts/psi-agent.sh find-usages processOrder --class OrderService
+./scripts/psi-agent.sh find-usages apiKey
+```
+
+### 4. PSI Extract Method — extract code into a new method
+```bash
+curl -X POST http://127.0.0.1:9742/api/extract-method \
+  -H "Content-Type: application/json" \
+  -d '{"file": "src/main/java/Foo.java", "new_method_name": "compute", "start_line": 10, "end_line": 25}'
+```
+
+This refactoring path is currently experimental and should be verified on both Java and Kotlin before relying on it for larger changes.
+
+Or via CLI:
+```bash
+./scripts/psi-agent.sh extract-method src/main/java/Foo.java compute 10 25
 ```
 
 ## When to use these tools
 
-- Use `psi_search` instead of `grep` when you need to find method/class definitions with full qualified names and line numbers.
-- Use `psi_rename` instead of find-and-replace when renaming a method — it correctly updates all call sites, imports, and references.
-- Use `psi_find_usages` to understand where a method is called before making changes.
+- Use `psi_search` instead of `grep` when you need to find method/class/field/variable definitions with full qualified names and line numbers.
+- Use `psi_rename` instead of find-and-replace when renaming ANY symbol (methods, classes, fields, variables, properties, type aliases, etc.) — it correctly updates all call sites, imports, and references across the project.
+- Use `psi_rename` from either the declaration site OR any usage site thanks to the universal symbol resolver.
+- Use `psi_find_usages` to understand where any symbol is used before making changes.
+- Use `psi_extract_method` to refactor complex methods by extracting code blocks into their own methods.
 - These tools work on both **Java** and **Kotlin** files.
 - Treat `psi_search` and `psi_find_usages` as read-only operations.
-- Treat `psi_rename` as a write operation that changes files.
+- Treat `psi_rename` and `psi_extract_method` as write operations that change files.
 
 ## MCP Protocol
 

@@ -10,6 +10,8 @@ import com.intellij.openapi.project.Project
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import io.github.ibrahimio.psiagent.refactoring.MethodRenamer
+import io.github.ibrahimio.psiagent.refactoring.MethodExtractor
+import io.github.ibrahimio.psiagent.refactoring.MoveClassProcessor
 import io.github.ibrahimio.psiagent.search.PsiCodeSearcher
 import java.io.IOException
 import java.net.InetSocketAddress
@@ -46,6 +48,7 @@ class McpServer(private val project: Project) {
                 createContext("/api/rename") { handleRename(it) }
                 createContext("/api/find-usages") { handleFindUsages(it) }
                 createContext("/api/health") { handleHealth(it) }
+                createContext("/api/move-class") { handleMoveClass(it) }
 
                 start()
             }
@@ -90,9 +93,11 @@ class McpServer(private val project: Project) {
                 "psi_search" -> executeSearch(exchange, params)
                 "psi_rename" -> executeRename(exchange, params)
                 "psi_find_usages" -> executeFindUsages(exchange, params)
+                "psi_extract_method" -> executeExtractMethod(exchange, params)
+                "psi_move_class" -> executeMoveClass(exchange, params)
                 else -> sendJson(exchange, 400, mapOf(
                     "error" to "Unknown tool: $toolName",
-                    "available" to listOf("psi_search", "psi_rename", "psi_find_usages")
+                    "available" to listOf("psi_search", "psi_rename", "psi_find_usages", "psi_extract_method", "psi_move_class")
                 ))
             }
         } catch (e: Exception) {
@@ -147,6 +152,17 @@ class McpServer(private val project: Project) {
         executeFindUsages(exchange, params)
     }
 
+    private fun handleMoveClass(exchange: HttpExchange) {
+        if (!requireAuth(exchange)) return
+        if (exchange.requestMethod != "POST") {
+            sendJson(exchange, 405, mapOf("error" to "POST required"))
+            return
+        }
+        val body = exchange.requestBody.bufferedReader().readText()
+        val params = JsonParser.parseString(body).asJsonObject
+        executeMoveClass(exchange, params)
+    }
+
     // ── Tool Execution Logic ───────────────────────────────────────────────
 
     private fun executeSearch(exchange: HttpExchange, params: JsonObject) {
@@ -163,6 +179,7 @@ class McpServer(private val project: Project) {
             when (type) {
                 "method" -> searcher.searchMethods(query)
                 "class" -> searcher.searchClasses(query)
+                "field" -> searcher.searchFields(query)
                 else -> searcher.searchAll(query)
             }
         }
@@ -206,23 +223,86 @@ class McpServer(private val project: Project) {
     }
 
     private fun executeFindUsages(exchange: HttpExchange, params: JsonObject) {
-        val methodName = params.get("method_name")?.asString
+        val symbolName = params.get("symbol_name")?.asString ?: params.get("method_name")?.asString
         val className = params.get("class_name")?.asString
+        val symbolType = params.get("symbol_type")?.asString
 
-        if (methodName.isNullOrBlank()) {
-            sendJson(exchange, 400, mapOf("error" to "Missing required parameter: method_name"))
+        if (symbolName.isNullOrBlank()) {
+            sendJson(exchange, 400, mapOf("error" to "Missing required parameter: symbol_name"))
             return
         }
 
         val results = ReadAction.compute<Any, Exception> {
             val searcher = PsiCodeSearcher(project)
-            searcher.findUsages(methodName, className)
+            searcher.findUsages(symbolName, className, symbolType)
         }
 
         sendJson(exchange, 200, mapOf(
             "tool" to "psi_find_usages",
-            "method_name" to methodName,
+            "symbol_name" to symbolName,
             "results" to results
+        ))
+    }
+
+    private fun executeExtractMethod(exchange: HttpExchange, params: JsonObject) {
+        val file = params.get("file")?.asString
+        val newMethodName = params.get("new_method_name")?.asString
+        val startLine = params.get("start_line")?.asInt
+        val endLine = params.get("end_line")?.asInt
+
+        if (file.isNullOrBlank() || newMethodName.isNullOrBlank() || startLine == null || endLine == null) {
+            sendJson(exchange, 400, mapOf(
+                "error" to "Missing required parameters: file, new_method_name, start_line, end_line"
+            ))
+            return
+        }
+
+        // Resolve relative paths against project base
+        val resolvedFile = if (file.startsWith("/") || file.contains(":")) {
+            file
+        } else {
+            "${project.basePath}/$file"
+        }
+
+        // ExtractMethodProcessor must run on EDT with write access
+        var result: Any? = null
+        ApplicationManager.getApplication().invokeAndWait {
+            val extractor = MethodExtractor(project)
+            result = extractor.extractMethod(resolvedFile, newMethodName, startLine, endLine)
+        }
+
+        sendJson(exchange, 200, mapOf(
+            "tool" to "psi_extract_method",
+            "result" to result
+        ))
+    }
+
+    private fun executeMoveClass(exchange: HttpExchange, params: JsonObject) {
+        val file = params.get("file")?.asString
+        val targetPackage = params.get("target_package")?.asString
+
+        if (file.isNullOrBlank() || targetPackage.isNullOrBlank()) {
+            sendJson(exchange, 400, mapOf(
+                "error" to "Missing required parameters: file, target_package"
+            ))
+            return
+        }
+
+        val resolvedFile = if (file.startsWith("/") || file.contains(":")) {
+            file
+        } else {
+            "${project.basePath}/$file"
+        }
+
+        var result: Any? = null
+        ApplicationManager.getApplication().invokeAndWait {
+            val mover = MoveClassProcessor(project)
+            result = mover.moveClass(resolvedFile, targetPackage)
+        }
+
+        sendJson(exchange, 200, mapOf(
+            "tool" to "psi_move_class",
+            "result" to result
         ))
     }
 

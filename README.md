@@ -1,6 +1,6 @@
 # PSI-based Agent
 
-A working prototype that uses IntelliJ IDEA's **Program Structure Interface (PSI)** for code refactoring, instead of fragile text-based editing.
+A working prototype that uses IntelliJ IDEA's **Program Structure Interface (PSI)** for code refactoring, instead of fragile text-based editing. Java rename/search are working; Kotlin parity and extract-method are being hardened.
 
 ## What is PSI?
 
@@ -40,7 +40,9 @@ PSI-based-agent/
     │   │   ├── McpServer.kt                   # HTTP server exposing PSI tools
     │   │   ├── McpServerService.kt            # Lifecycle (start on project open)
     │   │   └── McpToolDefinitions.kt          # MCP tool schemas
-    │   ├── refactoring/MethodRenamer.kt       # Core PSI rename logic
+        │   ├── refactoring/MethodRenamer.kt       # Core PSI rename logic
+        │   ├── refactoring/MoveClassProcessor.kt  # PSI move-class / move-package refactoring
+        │   ├── refactoring/MethodExtractor.kt     # Extract method prototype
     │   ├── search/PsiCodeSearcher.kt          # PSI-indexed code search
     │   └── visualization/PsiChangeVisualizer.kt  # Before/after PSI diff
     └── test/kotlin/.../refactoring/MethodRenamerTest.kt
@@ -175,6 +177,15 @@ PSI Tree (JSON):
 ### `MethodRenamer`
 Uses `RenameProcessor` — the same engine IntelliJ uses internally — to rename a method and all its usages across the entire project. The rename is atomic: it either fully succeeds or rolls back.
 
+### `MethodTargetResolver`
+Resolves a symbol from either a definition site or a usage site under the caret, but only returns real method/function/class/interface targets. This keeps the rename action available from call sites in Java and from Kotlin function call sites without lighting up on unrelated symbols.
+
+### `MethodExtractor`
+Wraps IntelliJ's extract-method refactoring for a selected line range. The Java path uses `ExtractMethodHandler`. Kotlin extraction is now wired through `ExtractKotlinFunctionHandler` but still needs validation in a real IDE session. Extract-method is disabled in unit test mode because the full IDE refactoring pipeline is required, and the helper now rejects blank method names and invalid line ranges before PSI work begins.
+
+### `MoveClassProcessor`
+Uses IntelliJ's move-class refactoring engine to move Java or Kotlin classes/objects to another package. The processor resolves or creates the target package directory, then lets IntelliJ update imports and references across the project.
+
 ### `PsiCodeSearcher`
 Uses `PsiShortNamesCache` and `MethodReferencesSearch` for fast, index-backed searches that understand the code's type system (not just string matching).
 
@@ -210,6 +221,8 @@ Then:
 2. Run `./gradlew runHeadless` (or `./gradlew runIde`)
 3. Open a Java/Kotlin project in the IDE
 4. The `psi_search`, `psi_rename`, and `psi_find_usages` tools will be available natively — no manual curl or approval prompts
+
+`psi_extract_method` is wired through the same MCP/HTTP path, but it should still be treated as experimental until the Java/Kotlin test coverage is expanded.
 
 If you prefer manual HTTP calls:
 
@@ -248,10 +261,13 @@ The CLI scripts automatically read `~/.psi-agent/token` or the `PSI_AGENT_TOKEN`
 ./scripts/psi-agent.sh search "getUserById" --type method
 ./scripts/psi-agent.sh rename src/Foo.java calculate compute
 ./scripts/psi-agent.sh find-usages processOrder --class OrderService
+./scripts/psi-agent.sh move-class src/Foo.java com.example.moved
+./scripts/psi-agent.sh extract-method src/Foo.java calculateTotal 10 25
 ./scripts/psi-agent.sh health
 
 # PowerShell (Windows)
 .\scripts\psi-agent.ps1 search "getUserById" -Type method
 .\scripts\psi-agent.ps1 rename src/Foo.java calculate compute
 .\scripts\psi-agent.ps1 find-usages processOrder -Class OrderService
+.\scripts\psi-agent.ps1 extract-method src/Foo.java calculateTotal 10 25
 ```

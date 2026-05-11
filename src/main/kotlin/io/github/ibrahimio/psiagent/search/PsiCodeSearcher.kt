@@ -9,7 +9,6 @@ import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.PsiShortNamesCache
-import com.intellij.psi.search.searches.MethodReferencesSearch
 import com.intellij.psi.search.searches.ReferencesSearch
 
 data class SearchResult(
@@ -48,31 +47,67 @@ class PsiCodeSearcher(private val project: Project) {
         }
     }
 
-    fun findUsages(methodName: String, className: String? = null): List<SearchResult> {
+    fun searchFields(namePattern: String): List<SearchResult> {
         val cache = PsiShortNamesCache.getInstance(project)
-        val methods = cache.getMethodsByName(methodName, scope).filter { method ->
-            className == null || method.containingClass?.name == className
-        }
-        return methods.flatMap { method ->
-            MethodReferencesSearch.search(method, scope, true).findAll().map { ref ->
-                buildSearchResult(ref.element, isDefinition = false)
+        val regex = globToRegex(namePattern)
+        val allFieldNames = cache.allFieldNames.filter { it.matches(regex) }
+        return allFieldNames.flatMap { name ->
+            cache.getFieldsByName(name, scope).map { field ->
+                buildSearchResult(field, isDefinition = true)
             }
         }
+    }
+
+    fun findUsages(symbolName: String, className: String? = null, symbolType: String? = null): List<SearchResult> {
+        val cache = PsiShortNamesCache.getInstance(project)
+        val normalizedType = symbolType?.lowercase()
+
+        val candidates = when (normalizedType) {
+            "method", "function" -> cache.getMethodsByName(symbolName, scope).filter { method ->
+                className == null || method.containingClass?.name == className
+            }
+            "class", "interface" -> cache.getClassesByName(symbolName, scope).toList()
+            "field", "property" -> cache.getFieldsByName(symbolName, scope).filter { field ->
+                className == null || field.containingClass?.name == className
+            }
+            else -> buildList {
+                addAll(cache.getMethodsByName(symbolName, scope).filter { method ->
+                    className == null || method.containingClass?.name == className
+                })
+                addAll(cache.getClassesByName(symbolName, scope))
+                addAll(cache.getFieldsByName(symbolName, scope).filter { field ->
+                    className == null || field.containingClass?.name == className
+                })
+            }
+        }
+
+        return candidates.distinctBy { candidateKey(it) }.flatMap { candidate ->
+            ReferencesSearch.search(candidate, scope, true).findAll().map { ref ->
+                buildSearchResult(ref.element, isDefinition = false)
+            }
+        }.distinctBy { "${it.filePath}:${it.lineNumber}:${it.name}:${it.elementType}" }
+    }
+
+    fun findMethodUsages(methodName: String, className: String? = null): List<SearchResult> {
+        return findUsages(methodName, className, "method")
+    }
+
+    private fun candidateKey(element: PsiElement): String {
+        val containingClass = when (element) {
+            is PsiMethod -> element.containingClass?.qualifiedName
+            is PsiField -> element.containingClass?.qualifiedName
+            is PsiClass -> element.qualifiedName
+            else -> null
+        }
+        val name = (element as? PsiNamedElement)?.name ?: element.javaClass.name
+        return "${element.javaClass.name}:$containingClass:$name"
     }
 
     fun searchAll(query: String): List<SearchResult> {
         val results = mutableListOf<SearchResult>()
         results += searchMethods(query)
         results += searchClasses(query)
-
-        val cache = PsiShortNamesCache.getInstance(project)
-        val regex = globToRegex(query)
-        val fieldNames = cache.allFieldNames.filter { it.matches(regex) }
-        fieldNames.flatMapTo(results) { name ->
-            cache.getFieldsByName(name, scope).map { field ->
-                buildSearchResult(field, isDefinition = true)
-            }
-        }
+        results += searchFields(query)
 
         return results.distinctBy { "${it.filePath}:${it.lineNumber}:${it.name}" }
     }

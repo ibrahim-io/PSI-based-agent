@@ -16,6 +16,7 @@
     .\scripts\psi-agent.ps1 search "get*" -Type method
     .\scripts\psi-agent.ps1 rename src/main/java/Foo.java calculate compute
     .\scripts\psi-agent.ps1 find-usages processOrder
+    .\scripts\psi-agent.ps1 move-class src/main/java/Foo.java com.example.moved
     .\scripts\psi-agent.ps1 health
     .\scripts\psi-agent.ps1 tools
 #>
@@ -74,6 +75,7 @@ Commands:
   search <query> [-Type method|class|all]     Search code elements
   rename <file> <old-name> <new-name>         Rename and update usages
   find-usages <method-name> [-Class name]     Find all references
+  move-class <file> <target-package>          Move a class/object to another package
   health                                       Check server status
   tools                                        List MCP tool schemas
 
@@ -127,6 +129,18 @@ switch ($Command) {
         $body = @{ method_name = $methodName }
         if ($className) { $body["class_name"] = $className }
         Invoke-PsiPost "/api/find-usages" $body
+    }
+    "move-class" {
+        if ($Args.Count -lt 2) { Write-Error "move-class requires <file> <target-package>"; exit 1 }
+        Invoke-PsiPost "/api/move-class" @{ file = $Args[0]; target_package = $Args[1] }
+    }
+    "extract-method" {
+        if ($Args.Count -lt 4) { Write-Error "extract-method requires <file> <new-method-name> <start-line> <end-line>"; exit 1 }
+        $file = $Args[0]
+        $newMethodName = $Args[1]
+        $startLine = [int]$Args[2]
+        $endLine = [int]$Args[3]
+        Invoke-PsiPost "/api/extract-method" @{ file = $file; new_method_name = $newMethodName; start_line = $startLine; end_line = $endLine }
     }
     default {
         Write-Error "Unknown command: $Command"

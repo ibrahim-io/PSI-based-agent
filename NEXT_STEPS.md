@@ -1,6 +1,6 @@
 # PSI Agent — Next Steps & Roadmap
 
-## Current State (Prototype — Working ✅)
+## Current State (Prototype — Working, but still needs hardening ✅)
 
 Claude Code successfully renames methods via PSI through HTTP calls to the IntelliJ server.
 The full pipeline works: Agent → bridge/CLI → HTTP server (inside IntelliJ) → PSI RenameProcessor → file updated.
@@ -11,26 +11,34 @@ Recent progress:
 - `package.json` and `package-lock.json` now exist for the Node bridge dependencies
 - `scripts/test-mcp-bridge.js` provides a repeatable smoke test for MCP handshake and tool discovery
 - `~/.psi-agent/token` auth is now supported end-to-end by the HTTP server, CLI scripts, and MCP bridge
+- `MethodExtractor.kt` has been aligned with the current IntelliJ `ExtractMethodProcessor` API and is wired into MCP/CLI
+- Rename-from-usage-site now uses a shared resolver, so call-site rename is available for Java methods/classes/interfaces and Kotlin functions
+- `RenameMethodAction` now updates on `BGT` and only enables when the caret resolves to a real method/function/class/interface target
+- `MethodExtractor` now validates blank method names and invalid line ranges before invoking PSI refactoring
+- `MethodExtractorTest.kt` now covers Java/Kotlin extraction regressions
+- PSI discovery is becoming symbol-centric: `psi_search` now includes fields, and `psi_find_usages` accepts `symbol_name` / `symbol_type` as well as the legacy `method_name`
+
+Still to harden:
+- Validate Kotlin extract-function integration in a real IDE session
+- Validate Java extract-method in a real IDE session (unit test mode is blocked)
+- Runtime verification of `psi_extract_method` across Java projects
+- Broader Kotlin edge-case coverage for rename flows
 
 ## Problems to Fix (Priority Order)
 
-### 🔴 P0: Make MCP work natively (no curl/approval prompts)
+### 🔴 P0: Stabilize the refactoring core (Java + Kotlin)
 
-**Status:** Implemented.
+**Status:** In progress.
 
 **Solution:**
-1. Created setup helper scripts (`scripts/setup-claude-code.sh` and `scripts/setup-claude-code.ps1`) that register the MCP bridge in Claude Code / Cursor configuration.
-2. The scripts copy the MCP config to `~/.config/claude-code/mcp-servers.json` so the bridge is recognized as a native tool server.
-3. Users can now register once and get native tool discovery without manual curl or approval prompts.
+1. Keep expanding Kotlin coverage for rename and extract-method.
+2. Keep the resolver and tests aligned so usage-site rename stays reliable.
+3. Verify whether Kotlin class/interface rename can be added through the same PSI path as Java; currently only Kotlin functions are covered.
 
 **How to use:**
-1. Run `./scripts/setup-claude-code.sh` (or `.ps1` on Windows)
-2. Restart Claude Code/Cursor
-3. Run `./gradlew runHeadless` to start the server
-4. Open a Java/Kotlin project in the IDE
-5. Tools are now available natively in Claude Code
-
-**Result:** Read-only tools (`psi_search`, `psi_find_usages`) are auto-approved. Write tools (`psi_rename`) require one-time user approval.
+1. Start with a Java/Kotlin project in the IDE
+2. Use `psi_rename` and `psi_extract_method` through the MCP bridge or CLI
+3. Confirm the same operation works from both the definition site and a usage site
 
 ### 🟡 P1: Reduce startup time
 
@@ -62,15 +70,37 @@ Recent progress:
 
 ### 🟢 P3: More refactoring operations
 
-Expand beyond rename. Each follows the same pattern as `MethodRenamer.kt`:
+**Status:** `psi_extract_method` is wired up for Java and Kotlin; `psi_move_class` is now implemented and exposed through MCP/HTTP/CLI.
 
-| Tool | IntelliJ Processor | Input |
-|---|---|---|
-| `psi_extract_method` | `ExtractMethodProcessor` | file, start line, end line, new method name |
-| `psi_move_class` | `MoveClassesOrPackagesProcessor` | source file, target package |
-| `psi_change_signature` | `ChangeSignatureProcessor` | method, new params, new return type |
-| `psi_inline_method` | `InlineMethodProcessor` | file, method name |
-| `psi_introduce_variable` | `IntroduceVariableHandler` | file, expression range, variable name |
+**What's available now:**
+1. `psi_extract_method` — Extract code blocks into new methods/functions.
+2. Full support in MCP, HTTP, and CLI (bash/PowerShell).
+3. Unit test mode blocks extract-method because the full IDE pipeline is required.
+4. Bad line ranges and blank method names are rejected before refactoring starts.
+
+**Current expansion:**
+1. `psi_move_class` — move Java/Kotlin classes or objects to another package.
+2. Validate edge cases for files with multiple top-level declarations.
+3. Confirm Kotlin light-class moves in a real IDE session.
+
+**Next step:** run extract-method in a real IDE session (`runIde`/`runHeadless`) to validate Java + Kotlin behavior.
+
+**Implementation pattern established:**
+Each new refactoring tool follows this checklist:
+- `McpToolDefinitions.kt` — add tool schema
+- `McpServer.kt` — add endpoint + dispatch
+- New `refactoring/XxxProcessor.kt` — core PSI logic
+- `psi-agent.sh` / `psi-agent.ps1` — add CLI command
+- `CLAUDE.md` — document new tool
+
+**Next tools to implement (in priority order):**
+
+| Tool | IntelliJ Processor | Input | Complexity |
+|---|---|---|---|
+| `psi_inline_method` | `InlineMethodProcessor` | file, method name | medium |
+| `psi_change_signature` | `ChangeSignatureProcessor` | method, new params, new return type | high |
+| `psi_introduce_variable` | `IntroduceVariableHandler` | file, expression range, variable name | high |
+
 
 ### 🟢 P4: Real IDE installation
 

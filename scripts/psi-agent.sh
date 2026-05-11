@@ -13,6 +13,7 @@
 #   ./scripts/psi-agent.sh search "getUserById" [--type method|class|all]
 #   ./scripts/psi-agent.sh rename <file> <old-name> <new-name>
 #   ./scripts/psi-agent.sh find-usages <method-name> [--class ClassName]
+#   ./scripts/psi-agent.sh move-class <file> <target-package>
 #   ./scripts/psi-agent.sh health
 #   ./scripts/psi-agent.sh tools
 
@@ -87,6 +88,18 @@ Commands:
       Examples:
         psi-agent.sh find-usages processOrder
         psi-agent.sh find-usages getData --class UserService
+
+  move-class <file> <target-package>
+      Move a class/object to another package using PSI.
+      Examples:
+        psi-agent.sh move-class src/main/java/Foo.java com.example.moved
+        psi-agent.sh move-class src/main/kotlin/Bar.kt com.example.shared
+
+  extract-method <file> <new-method-name> <start-line> <end-line>
+      Extract a block of code into a new method.
+      Examples:
+        psi-agent.sh extract-method src/main/java/Foo.java calculateTotal 10 25
+        psi-agent.sh extract-method src/main/kotlin/Bar.kt doWork 5 12
 
   health
       Check if the MCP server is running and show project info.
@@ -186,6 +199,38 @@ cmd_find_usages() {
         post_json "/api/find-usages" "$json"
 }
 
+cmd_move_class() {
+    check_server
+    local file="${1:-}"
+    local target_package="${2:-}"
+
+    if [[ -z "$file" || -z "$target_package" ]]; then
+        echo "ERROR: move-class requires <file> <target-package>" >&2
+        exit 1
+    fi
+
+    post_json "/api/move-class" "{\"file\": \"${file}\", \"target_package\": \"${target_package}\"}" | \
+        python3 -m json.tool 2>/dev/null || \
+        post_json "/api/move-class" "{\"file\": \"${file}\", \"target_package\": \"${target_package}\"}"
+}
+
+cmd_extract_method() {
+    check_server
+    local file="${1:-}"
+    local new_method_name="${2:-}"
+    local start_line="${3:-}"
+    local end_line="${4:-}"
+
+    if [[ -z "$file" || -z "$new_method_name" || -z "$start_line" || -z "$end_line" ]]; then
+        echo "ERROR: extract-method requires <file> <new-method-name> <start-line> <end-line>" >&2
+        exit 1
+    fi
+
+    post_json "/api/extract-method" "{\"file\": \"${file}\", \"new_method_name\": \"${new_method_name}\", \"start_line\": ${start_line}, \"end_line\": ${end_line}}" | \
+        python3 -m json.tool 2>/dev/null || \
+        post_json "/api/extract-method" "{\"file\": \"${file}\", \"new_method_name\": \"${new_method_name}\", \"start_line\": ${start_line}, \"end_line\": ${end_line}}"
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 if [[ $# -eq 0 ]] || [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
@@ -200,6 +245,8 @@ case "$COMMAND" in
     search)       cmd_search "$@" ;;
     rename)       cmd_rename "$@" ;;
     find-usages)  cmd_find_usages "$@" ;;
+    move-class)   cmd_move_class "$@" ;;
+    extract-method) cmd_extract_method "$@" ;;
     health)       cmd_health ;;
     tools)        cmd_tools ;;
     *)
