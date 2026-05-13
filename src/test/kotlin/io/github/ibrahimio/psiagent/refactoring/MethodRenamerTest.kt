@@ -41,6 +41,27 @@ class MethodRenamerTest : BasePlatformTestCase() {
         assertNull("Old method 'add' should no longer exist in PSI", oldMethod)
     }
 
+    fun testRenameClassSucceeds() {
+        val javaCode = """
+            public class OldService {
+                public String name() {
+                    return "old";
+                }
+            }
+        """.trimIndent()
+
+        val psiFile = myFixture.configureByText("OldService.java", javaCode)
+        val filePath = psiFile.virtualFile.url
+
+        val renamer = MethodRenamer(project)
+        val result = renamer.renameMethod(filePath, "OldService", "NewService")
+
+        assertTrue("Class rename should succeed", result.success)
+        assertNotNull("Renamed class should exist", renamer.findSymbolInFile(psiFile, "NewService"))
+        assertNull("Old class should no longer exist", renamer.findSymbolInFile(psiFile, "OldService"))
+        assertTrue("Updated text should contain new class name", psiFile.text.contains("class NewService"))
+    }
+
     fun testRenameMethodNotFound() {
         val javaCode = """
             public class Greeter {

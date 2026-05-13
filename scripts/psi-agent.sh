@@ -98,6 +98,12 @@ Commands:
          psi-agent.sh introduce-variable src/main/java/Foo.java sum 4 16 4 20
          psi-agent.sh introduce-variable src/main/kotlin/Bar.kt total 6 16 6 24
 
+    delete-symbol <file> <symbol-name> [--type all|method|class]
+        Delete a Java or Kotlin method/function or class/object from a file.
+        Examples:
+          psi-agent.sh delete-symbol src/main/java/Foo.java removeMe --type method
+          psi-agent.sh delete-symbol src/main/kotlin/Bar.kt OldClass --type class
+
   find-usages <method-name> [--class ClassName]
       Find all call sites / references to a method.
       Examples:
@@ -219,6 +225,30 @@ cmd_introduce_variable() {
         post_json "/api/introduce-variable" "{\"file\": \"${file}\", \"variable_name\": \"${variable_name}\", \"start_line\": ${start_line}, \"start_column\": ${start_column}, \"end_line\": ${end_line}, \"end_column\": ${end_column}}"
 }
 
+cmd_delete_symbol() {
+    check_server
+    local file="${1:-}"
+    local symbol_name="${2:-}"
+    local symbol_type="all"
+
+    shift 2 || true
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --type) shift; symbol_type="${1:-all}"; shift ;;
+            *) shift ;;
+        esac
+    done
+
+    if [[ -z "$file" || -z "$symbol_name" ]]; then
+        echo "ERROR: delete-symbol requires <file> <symbol-name> [--type all|method|class]" >&2
+        exit 1
+    fi
+
+    post_json "/api/delete-symbol" "{\"file\": \"${file}\", \"symbol_name\": \"${symbol_name}\", \"symbol_type\": \"${symbol_type}\"}" | \
+        python3 -m json.tool 2>/dev/null || \
+        post_json "/api/delete-symbol" "{\"file\": \"${file}\", \"symbol_name\": \"${symbol_name}\", \"symbol_type\": \"${symbol_type}\"}"
+}
+
 cmd_find_usages() {
     check_server
     local method_name="${1:-}"
@@ -295,6 +325,7 @@ case "$COMMAND" in
     rename)       cmd_rename "$@" ;;
     inline-method) cmd_inline_method "$@" ;;
     introduce-variable) cmd_introduce_variable "$@" ;;
+    delete-symbol) cmd_delete_symbol "$@" ;;
     find-usages)  cmd_find_usages "$@" ;;
     move-class)   cmd_move_class "$@" ;;
     extract-method) cmd_extract_method "$@" ;;

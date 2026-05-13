@@ -11,10 +11,20 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import io.github.ibrahimio.psiagent.refactoring.MethodRenamer
 import io.github.ibrahimio.psiagent.refactoring.MethodExtractor
+import io.github.ibrahimio.psiagent.refactoring.DeleteSymbolProcessor
+import io.github.ibrahimio.psiagent.refactoring.DeleteSymbolResult
+import io.github.ibrahimio.psiagent.refactoring.RenameResult
 import io.github.ibrahimio.psiagent.refactoring.InlineMethodProcessor
+import io.github.ibrahimio.psiagent.refactoring.InlineMethodResult
 import io.github.ibrahimio.psiagent.refactoring.IntroduceVariableProcessor
+import io.github.ibrahimio.psiagent.refactoring.IntroduceVariableResult
 import io.github.ibrahimio.psiagent.refactoring.MoveClassProcessor
+import io.github.ibrahimio.psiagent.refactoring.MoveClassResult
 import io.github.ibrahimio.psiagent.search.PsiCodeSearcher
+import io.github.ibrahimio.psiagent.visualization.PsiChangeRecord
+import io.github.ibrahimio.psiagent.visualization.PsiDiffService
+import io.github.ibrahimio.psiagent.visualization.PsiFileSnapshot
+import io.github.ibrahimio.psiagent.visualization.PsiSnapshotSerializer
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.util.concurrent.Executors
@@ -50,6 +60,7 @@ class McpServer(private val project: Project) {
                 createContext("/api/rename") { handleRename(it) }
                 createContext("/api/inline-method") { handleInlineMethod(it) }
                 createContext("/api/introduce-variable") { handleIntroduceVariable(it) }
+                createContext("/api/delete-symbol") { handleDeleteSymbol(it) }
                 createContext("/api/find-usages") { handleFindUsages(it) }
                 createContext("/api/health") { handleHealth(it) }
                 createContext("/api/move-class") { handleMoveClass(it) }
@@ -98,12 +109,13 @@ class McpServer(private val project: Project) {
                 "psi_rename" -> executeRename(exchange, params)
                 "psi_inline_method" -> executeInlineMethod(exchange, params)
                 "psi_introduce_variable" -> executeIntroduceVariable(exchange, params)
+                "psi_delete_symbol" -> executeDeleteSymbol(exchange, params)
                 "psi_find_usages" -> executeFindUsages(exchange, params)
                 "psi_extract_method" -> executeExtractMethod(exchange, params)
                 "psi_move_class" -> executeMoveClass(exchange, params)
                 else -> sendJson(exchange, 400, mapOf(
                     "error" to "Unknown tool: $toolName",
-                    "available" to listOf("psi_search", "psi_rename", "psi_inline_method", "psi_introduce_variable", "psi_find_usages", "psi_extract_method", "psi_move_class")
+                    "available" to listOf("psi_search", "psi_rename", "psi_inline_method", "psi_introduce_variable", "psi_delete_symbol", "psi_find_usages", "psi_extract_method", "psi_move_class")
                 ))
             }
         } catch (e: Exception) {
@@ -167,6 +179,17 @@ class McpServer(private val project: Project) {
         val body = exchange.requestBody.bufferedReader().readText()
         val params = JsonParser.parseString(body).asJsonObject
         executeIntroduceVariable(exchange, params)
+    }
+
+    private fun handleDeleteSymbol(exchange: HttpExchange) {
+        if (!requireAuth(exchange)) return
+        if (exchange.requestMethod != "POST") {
+            sendJson(exchange, 405, mapOf("error" to "POST required"))
+            return
+        }
+        val body = exchange.requestBody.bufferedReader().readText()
+        val params = JsonParser.parseString(body).asJsonObject
+        executeDeleteSymbol(exchange, params)
     }
 
     private fun handleFindUsages(exchange: HttpExchange) {
@@ -237,16 +260,22 @@ class McpServer(private val project: Project) {
             "${project.basePath}/$file"
         }
 
+        val beforeSnapshot = snapshotFile(resolvedFile)
+
         // RenameProcessor must run on EDT with write access
-        var result: Any? = null
+        var result: RenameResult? = null
         ApplicationManager.getApplication().invokeAndWait {
             val renamer = MethodRenamer(project)
             result = renamer.renameMethod(resolvedFile, oldName, newName)
         }
 
+        val renameResult = result ?: return sendJson(exchange, 500, mapOf("error" to "Rename refactoring did not return a result"))
+        val afterSnapshot = snapshotFile(renameResult.affectedFiles.firstOrNull { it.endsWith(".java") || it.endsWith(".kt") } ?: resolvedFile)
+        publishPsiChange("psi_rename", resolvedFile, beforeSnapshot, afterSnapshot, renameResult.success, renameResult.message, renameResult.affectedFiles)
+
         sendJson(exchange, 200, mapOf(
             "tool" to "psi_rename",
-            "result" to result
+            "result" to renameResult
         ))
     }
 
@@ -265,15 +294,21 @@ class McpServer(private val project: Project) {
             "${project.basePath}/$file"
         }
 
-        var result: Any? = null
+        val beforeSnapshot = snapshotFile(resolvedFile)
+
+        var result: InlineMethodResult? = null
         ApplicationManager.getApplication().invokeAndWait {
             val inliner = InlineMethodProcessor(project)
             result = inliner.inlineMethod(resolvedFile, methodName)
         }
 
+        val inlineResult = result ?: return sendJson(exchange, 500, mapOf("error" to "Inline refactoring did not return a result"))
+        val afterSnapshot = snapshotFile(resolvedFile)
+        publishPsiChange("psi_inline_method", resolvedFile, beforeSnapshot, afterSnapshot, inlineResult.success, inlineResult.message, inlineResult.affectedFiles)
+
         sendJson(exchange, 200, mapOf(
             "tool" to "psi_inline_method",
-            "result" to result
+            "result" to inlineResult
         ))
     }
 
@@ -298,15 +333,55 @@ class McpServer(private val project: Project) {
             "${project.basePath}/$file"
         }
 
-        var result: Any? = null
+        val beforeSnapshot = snapshotFile(resolvedFile)
+
+        var result: IntroduceVariableResult? = null
         ApplicationManager.getApplication().invokeAndWait {
             val introducer = IntroduceVariableProcessor(project)
             result = introducer.introduceVariable(resolvedFile, variableName, startLine, startColumn, endLine, endColumn)
         }
 
+        val introduceResult = result ?: return sendJson(exchange, 500, mapOf("error" to "Introduce-variable refactoring did not return a result"))
+        val afterSnapshot = snapshotFile(resolvedFile)
+        publishPsiChange("psi_introduce_variable", resolvedFile, beforeSnapshot, afterSnapshot, introduceResult.success, introduceResult.message, introduceResult.affectedFiles)
+
         sendJson(exchange, 200, mapOf(
             "tool" to "psi_introduce_variable",
-            "result" to result
+            "result" to introduceResult
+        ))
+    }
+
+    private fun executeDeleteSymbol(exchange: HttpExchange, params: JsonObject) {
+        val file = params.get("file")?.asString
+        val symbolName = params.get("symbol_name")?.asString ?: params.get("name")?.asString
+        val symbolType = params.get("symbol_type")?.asString ?: "all"
+
+        if (file.isNullOrBlank() || symbolName.isNullOrBlank()) {
+            sendJson(exchange, 400, mapOf("error" to "Missing required parameters: file, symbol_name"))
+            return
+        }
+
+        val resolvedFile = if (file.startsWith("/") || file.contains(":")) {
+            file
+        } else {
+            "${project.basePath}/$file"
+        }
+
+        val beforeSnapshot = snapshotFile(resolvedFile)
+
+        var result: DeleteSymbolResult? = null
+        ApplicationManager.getApplication().invokeAndWait {
+            val deleter = DeleteSymbolProcessor(project)
+            result = deleter.deleteSymbol(resolvedFile, symbolName, symbolType)
+        }
+
+        val deleteResult = result ?: return sendJson(exchange, 500, mapOf("error" to "Delete-symbol refactoring did not return a result"))
+        val afterSnapshot = snapshotFile(resolvedFile)
+        publishPsiChange("psi_delete_symbol", resolvedFile, beforeSnapshot, afterSnapshot, deleteResult.success, deleteResult.message, deleteResult.affectedFiles)
+
+        sendJson(exchange, 200, mapOf(
+            "tool" to "psi_delete_symbol",
+            "result" to deleteResult
         ))
     }
 
@@ -352,6 +427,8 @@ class McpServer(private val project: Project) {
             "${project.basePath}/$file"
         }
 
+        val beforeSnapshot = snapshotFile(resolvedFile)
+
         // ExtractMethodProcessor must run on EDT with write access
         var result: Any? = null
         ApplicationManager.getApplication().invokeAndWait {
@@ -359,9 +436,14 @@ class McpServer(private val project: Project) {
             result = extractor.extractMethod(resolvedFile, newMethodName, startLine, endLine)
         }
 
+        val extractResult = result as? io.github.ibrahimio.psiagent.refactoring.ExtractMethodResult
+            ?: return sendJson(exchange, 500, mapOf("error" to "Extract-method refactoring did not return a result"))
+        val afterSnapshot = snapshotFile(resolvedFile)
+        publishPsiChange("psi_extract_method", resolvedFile, beforeSnapshot, afterSnapshot, extractResult.success, extractResult.message, extractResult.affectedFiles)
+
         sendJson(exchange, 200, mapOf(
             "tool" to "psi_extract_method",
-            "result" to result
+            "result" to extractResult
         ))
     }
 
@@ -382,15 +464,24 @@ class McpServer(private val project: Project) {
             "${project.basePath}/$file"
         }
 
-        var result: Any? = null
+        val beforeSnapshot = snapshotFile(resolvedFile)
+
+        var result: MoveClassResult? = null
         ApplicationManager.getApplication().invokeAndWait {
             val mover = MoveClassProcessor(project)
             result = mover.moveClass(resolvedFile, targetPackage)
         }
 
+        val moveResult = result ?: return sendJson(exchange, 500, mapOf("error" to "Move-class refactoring did not return a result"))
+        val afterSnapshotPath = moveResult.affectedFiles.firstOrNull { it != resolvedFile && (it.endsWith(".java") || it.endsWith(".kt")) }
+            ?: moveResult.affectedFiles.lastOrNull { it.endsWith(".java") || it.endsWith(".kt") }
+            ?: resolvedFile
+        val afterSnapshot = snapshotFile(afterSnapshotPath)
+        publishPsiChange("psi_move_class", resolvedFile, beforeSnapshot, afterSnapshot, moveResult.success, moveResult.message, moveResult.affectedFiles)
+
         sendJson(exchange, 200, mapOf(
             "tool" to "psi_move_class",
-            "result" to result
+            "result" to moveResult
         ))
     }
 
@@ -413,5 +504,34 @@ class McpServer(private val project: Project) {
         exchange.responseHeaders.add("Access-Control-Allow-Origin", "*")
         exchange.sendResponseHeaders(statusCode, bytes.size.toLong())
         exchange.responseBody.use { it.write(bytes) }
+    }
+
+    private fun snapshotFile(filePath: String?): PsiFileSnapshot? {
+        if (filePath.isNullOrBlank()) return null
+        return ReadAction.compute<PsiFileSnapshot?, Exception> {
+            PsiSnapshotSerializer(project).snapshot(filePath)
+        }
+    }
+
+    private fun publishPsiChange(
+        toolName: String,
+        filePath: String,
+        before: PsiFileSnapshot?,
+        after: PsiFileSnapshot?,
+        success: Boolean,
+        message: String,
+        affectedFiles: List<String>
+    ) {
+        project.getService(PsiDiffService::class.java).publish(
+            PsiChangeRecord(
+                toolName = toolName,
+                filePath = filePath,
+                success = success,
+                message = message,
+                affectedFiles = affectedFiles,
+                before = before,
+                after = after
+            )
+        )
     }
 }

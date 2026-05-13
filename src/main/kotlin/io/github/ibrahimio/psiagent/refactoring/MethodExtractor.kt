@@ -40,10 +40,43 @@ class MethodExtractor(private val project: Project) {
         startLine: Int,
         endLine: Int
     ): ExtractMethodResult {
+        if (newMethodName.isBlank()) {
+            return ExtractMethodResult(
+                success = false,
+                message = "newMethodName cannot be blank",
+                file = filePath,
+                newMethodName = newMethodName,
+                startLine = startLine,
+                endLine = endLine
+            )
+        }
+
+        if (startLine < 1 || endLine < startLine) {
+            return ExtractMethodResult(
+                success = false,
+                message = "Invalid line range: startLine=$startLine, endLine=$endLine",
+                file = filePath,
+                newMethodName = newMethodName,
+                startLine = startLine,
+                endLine = endLine
+            )
+        }
+
         if (ApplicationManager.getApplication().isUnitTestMode) {
             return ExtractMethodResult(
                 success = false,
                 message = "Extract method is not supported in unit test mode. Run this in a real IDE session.",
+                file = filePath,
+                newMethodName = newMethodName,
+                startLine = startLine,
+                endLine = endLine
+            )
+        }
+
+        if (ApplicationManager.getApplication().isHeadlessEnvironment) {
+            return ExtractMethodResult(
+                success = false,
+                message = "Extract method requires a GUI IDE session. Run IntelliJ with `runIde` instead of headless mode.",
                 file = filePath,
                 newMethodName = newMethodName,
                 startLine = startLine,
@@ -77,17 +110,6 @@ class MethodExtractor(private val project: Project) {
             return extractKotlinFunction(psiFile, virtualFile, newMethodName, startLine, endLine)
         }
 
-        if (startLine < 1 || endLine < startLine) {
-            return ExtractMethodResult(
-                success = false,
-                message = "Invalid line range: startLine=$startLine, endLine=$endLine",
-                file = filePath,
-                newMethodName = newMethodName,
-                startLine = startLine,
-                endLine = endLine
-            )
-        }
-
         val document = PsiDocumentManager.getInstance(project).getDocument(psiFile)
             ?: return ExtractMethodResult(
                 success = false,
@@ -119,11 +141,7 @@ class MethodExtractor(private val project: Project) {
             try {
                 editor.selectionModel.setSelection(startOffset, endOffset)
 
-                val elements = ExtractMethodHandler.getElements(project, editor, psiFile)
-                    ?.filterNotNull()
-                    ?.filterNot { it is PsiWhiteSpace }
-                    ?.toTypedArray()
-                    ?: emptyArray()
+                val elements = resolveSelectedElements(editor, psiFile, startOffset, endOffset)
 
                 if (elements.isEmpty()) {
                     return ExtractMethodResult(
@@ -169,7 +187,7 @@ class MethodExtractor(private val project: Project) {
                             failureMessage = "Extract method validation failed"
                         }
                     } catch (e: Throwable) {
-                        failureMessage = e.message ?: e.javaClass.simpleName
+                        failureMessage = "Extract method failed: ${e.message ?: e.javaClass.simpleName}"
                     }
                 }
 
@@ -250,6 +268,30 @@ class MethodExtractor(private val project: Project) {
                 }
             }
             .sortedBy { it.textRange?.startOffset ?: Int.MAX_VALUE }
+    }
+
+    private fun resolveSelectedElements(
+        editor: Editor,
+        psiFile: PsiFile,
+        startOffset: Int,
+        endOffset: Int
+    ): Array<PsiElement> {
+        val handlerElements: Array<PsiElement>? = try {
+            ExtractMethodHandler.getElements(project, editor, psiFile)
+                ?.filterNotNull()
+                ?.filterNot { it is PsiWhiteSpace }
+                ?.toTypedArray()
+        } catch (_: Throwable) {
+            null
+        }
+
+        if (!handlerElements.isNullOrEmpty()) {
+            return handlerElements
+        }
+
+        return collectSelectedElements(psiFile, startOffset, endOffset)
+            .filterNot { it is PsiWhiteSpace }
+            .toTypedArray()
     }
 
     private fun openEditor(virtualFile: com.intellij.openapi.vfs.VirtualFile, document: com.intellij.openapi.editor.Document): EditorHandle {

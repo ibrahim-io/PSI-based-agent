@@ -23,3 +23,7 @@ Thumbs.db
 
 # Log files
 *.log
+
+# Node dependencies for the MCP bridge
+node_modules/
+

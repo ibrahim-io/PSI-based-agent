@@ -218,4 +218,3 @@ class IntroduceVariableProcessor(private val project: Project) {
 }
 
 
-

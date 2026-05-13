@@ -9,15 +9,18 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <!-- MCP server lifecycle -->
-        <projectService serviceImplementation="io.github.ibrahimio.psiagent.mcp.McpServerService"/>
         <postStartupActivity implementation="io.github.ibrahimio.psiagent.mcp.McpServerStartupActivity"/>
+        <toolWindow id="PSI Change Preview"
+                    anchor="right"
+                    factoryClass="io.github.ibrahimio.psiagent.toolwindow.PsiChangeToolWindowFactory"
+                    canCloseContents="false"/>
     </extensions>
 
     <actions>
         <action id="PSIAgent.RenameMethod"
                 class="io.github.ibrahimio.psiagent.actions.RenameMethodAction"
-                text="Rename Method (PSI Agent)"
-                description="Rename a method using PSI-based refactoring">
+                text="Rename Symbol (PSI Agent)"
+                description="Rename a class, method, field, property, or variable using PSI-based refactoring">
             <add-to-group group-id="EditorPopupMenu" anchor="first"/>
         </action>
     </actions>
