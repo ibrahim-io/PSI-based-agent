@@ -1,6 +1,147 @@
-# PSI-based Agent
+# PSI-based Agent: IntelliJ Code Refactoring via Program Structure Interface
 
 A working prototype that uses IntelliJ IDEA's **Program Structure Interface (PSI)** for code refactoring, instead of fragile text-based editing. Java rename/search are working; Kotlin parity and extract-method are being hardened.
+
+---
+
+## ✅ Completed Work (Phase 1 & 2)
+
+### Phase 1: Core PSI-Based Refactoring Engine
+
+- **PSI-aware Code Search** (`PsiCodeSearcher`): Index-backed search using `PsiShortNamesCache` and `MethodReferencesSearch` for methods, classes, fields, properties, and variables. Understands type systems and cross-file references.
+- **Universal Rename Engine** (`MethodRenamer`): Supports renaming any renamable PSI node — methods, functions, classes, interfaces, fields, properties, variables, parameters, and type aliases across Java and Kotlin. Uses IntelliJ's `RenameProcessor` for atomic, safe refactoring with full undo/redo support.
+- **Extract Method** (`MethodExtractor`): Extracts code blocks into new methods/functions with proper parameter inference. Java path uses `ExtractMethodHandler`; Kotlin uses `ExtractKotlinFunctionHandler`.
+- **Inline Method** (`InlineMethodProcessor`): Collapses simple methods/functions into their call sites (currently supports zero-parameter methods with single return expressions).
+- **Introduce Variable** (`IntroduceVariableProcessor`): Lifts precise Java/Kotlin expressions into new local variables with correct scoping.
+- **Move Class/Package** (`MoveClassProcessor`): Moves classes and Kotlin objects to different packages with automatic import/reference updates.
+- **Method Target Resolver** (`MethodTargetResolver`): Resolves symbols from both declaration and usage sites, enabling context-aware refactoring actions from right-click menus and editor context.
+
+### Phase 2: MCP Server & HTTP Bridge
+
+- **HTTP MCP Server** (`McpServer`, `McpServerService`): Runs on `127.0.0.1:9742` with bearer token authentication. Exposes PSI operations via HTTP endpoints. Auto-starts when a project is open in the IDE.
+- **Tool Discovery** (`McpToolDefinitions`): Implements MCP (`Model Context Protocol`) tool manifest for native integration with AI agents (Claude Code, Cursor, etc.).
+- **CLI Wrappers** (`psi-agent.ps1`, `psi-agent.sh`): PowerShell and Bash scripts to call the HTTP server without needing a running IDE for certain operations.
+- **Bearer Token File** (`~/.psi-agent/token`): Auto-generated security token; read by CLI and MCP bridge for authentication.
+- **MCP Stdio Bridge** (`mcp-stdio-bridge.js`): Node.js bridge that connects Claude Code / Cursor to the local HTTP server via stdio protocol.
+
+### Phase 3: Visual Tree Diagram & GUI Enhancement
+
+**New this session:**
+
+- **PsiTreeDiagram** (`visualization/PsiTreeDiagram.kt`): Custom Swing JComponent that renders a top-down tree diagram with:
+  - **Nodes**: Rounded rectangles showing PSI tree node labels with truncation for long names.
+  - **Edges**: Connecting lines showing parent-child relationships.
+  - **Centered Tree Layout**: Automatically computes horizontal centering of parent nodes above children, with configurable level and sibling gaps.
+  - **Color-coded by Status**: Nodes can be colored by change status (unchanged, changed, added, removed) for visualization of before/after diffs.
+
+- **PSI Change Preview Tool Window Enhancement**: Replaced the static Swing `JTree` with the visual `PsiTreeDiagram` component. The diagram now:
+  - Renders the PSI tree from `PsiChangeRecord` as a visual graph instead of text.
+  - Shows Overview, Before, After, and Affected Files views with proper node layout.
+  - Maintains the ASCII tree view on the bottom for text-based reference.
+
+- **PSI Agent Tool Window** (new): Secondary tool window for browsing and searching the PSI agent endpoints directly from the IDE:
+  - **PsiAgentToolWindowFactory**: Registers the tool window in the IDE.
+  - **PsiAgentDiagramPanel**: Includes:
+    - Status button to check if the PSI agent HTTP server is online.
+    - Search field + Search button to query PSI via HTTP.
+    - Canvas that renders results as draggable, interactive nodes in a grid layout.
+    - **Tree button**: Arranges nodes as a top-down binary tree diagram.
+    - **Reset layout button**: Restores the original grid layout after dragging/rearranging.
+  - **PsiAgentClient**: HTTP client that:
+    - Automatically reads bearer token from `~/.psi-agent/token` for authentication.
+    - Calls `/api/search` and `/api/health` endpoints.
+    - Handles lenient JSON parsing to work with various response formats.
+    - Runs network operations on background threads to avoid blocking the UI.
+
+- **Auto-Show Tool Window**: Modified `PsiDiffService.publish()` to automatically display the "PSI Change Preview" tool window when a refactoring completes and publishes a change record. No need to manually open View → Tool Windows anymore.
+
+### Testing & Validation
+
+- Build system: Gradle-based IntelliJ Plugin build with `runIde` (GUI) and `runHeadless` (faster, no GUI) tasks.
+- Test suite: Unit tests for `MethodRenamer`, `MethodExtractor`, `InlineMethodProcessor`, `IntroduceVariableProcessor`, `DeleteSymbolProcessor`, `ChangeSignatureProcessor`, and target resolver.
+- CI integration ready via standard Gradle/GitHub Actions patterns.
+
+---
+
+## 📋 Future Roadmap (Phase 3+)
+
+### Immediate Next Steps (High Priority)
+
+1. **Interactive Diagram Features**
+   - Double-click on a diagram node to open the file in the editor and jump to the specific line.
+   - Right-click context menu on nodes: "Rename", "Find Usages", "Extract Method", "Navigate to File".
+   - Tooltip on hover showing node type, name, file path, and line number.
+
+2. **Node Visualization Enhancements**
+   - Color nodes by change status (green for added, red for removed, yellow for modified, gray for unchanged).
+   - Show icons or glyph indicators for node types (method, class, field, variable, etc.).
+   - Enable collapsing/expanding subtrees interactively.
+   - Support pan and zoom controls for large trees.
+
+3. **Advanced Layout Algorithms**
+   - Implement force-directed layout for automatic node positioning that avoids overlaps.
+   - Support circular/radial layouts for call graphs.
+   - Use a third-party library (e.g., JGraphX or Graphviz integration) for professional graph rendering.
+
+4. **Settings & Customization**
+   - Add IDE Settings → Tools → PSI Agent configuration panel:
+     - Auto-show behavior: Always, on change only, never, or silent (no focus).
+     - Diagram animation/transition preferences.
+     - Node size, spacing, and color themes.
+   - Save user preferences to `~/.psi-agent/settings.json`.
+
+### Medium-Term Enhancements (Phase 4)
+
+5. **Larger Scale Code Analysis**
+   - Visualize call graphs: show who calls whom across modules.
+   - Visualize class hierarchies and dependency graphs.
+   - Show unused methods, fields, and classes in red.
+   - Highlight circular dependencies and complexity hotspots.
+
+6. **Multi-File Refactoring Visualization**
+   - Side-by-side before/after views of multiple affected files in the diagram.
+   - Highlight cross-file relationships and import changes.
+   - Show a summary matrix of changes per file.
+
+7. **Batch Refactoring Support**
+   - Rename multiple methods/classes in one operation via the diagram UI.
+   - Preview and apply a batch of refactorings atomically.
+   - Undo/redo as a single unit.
+
+8. **Export & Reporting**
+   - Export diagrams as SVG or PNG for documentation.
+   - Generate refactoring reports (HTML, Markdown) summarizing changes.
+   - Export as GraphML or GexF for external analysis tools.
+
+### Long-Term Vision (Phase 5+)
+
+9. **AI Agent Enhancements**
+   - Implement feedback loops: agent proposes refactorings and visualizes them; user approves or feeds back corrections.
+   - Real-time or batch analysis by external AI systems (static analysis, code review assistants).
+   - Integration with GitHub Actions / CI for automated PSI-based checks.
+
+10. **Language & Framework Extensions**
+    - Extend from Java/Kotlin to other JVM languages (Scala, Groovy, Clojure).
+    - Support Python, TypeScript, Go, and other languages via LSP (Language Server Protocol) integration.
+    - Kotlin Multiplatform (KMP) support for cross-platform refactoring.
+
+11. **Real-Time Collaboration**
+    - WebSocket-based live diagram sync for multiple users editing the same codebase.
+    - Collaborative refactoring: see team members' refactoring proposals in real-time.
+
+12. **Machine Learning / Code Patterns**
+    - Suggest refactorings based on detected code smells and patterns.
+    - Learn common refactoring patterns from project history.
+    - Recommend variable/method names based on semantic analysis.
+
+### Testing & Documentation
+
+- Expand test suite: add integration tests for all diagram rendering scenarios.
+- Benchmark diagram rendering performance with large trees (1000+ nodes).
+- Document best practices for PSI-based refactoring in a developer guide.
+- Create video tutorials showing diagram-based refactoring workflows.
+
+---
 
 ## What is PSI?
 
@@ -44,11 +185,47 @@ PSI-based-agent/
         │   ├── refactoring/MoveClassProcessor.kt  # PSI move-class / move-package refactoring
         │   ├── refactoring/MethodExtractor.kt     # Extract method prototype
     │   ├── search/PsiCodeSearcher.kt          # PSI-indexed code search
+        │   ├── toolwindow/
+        │   │   ├── PsiChangeToolWindowPanel.kt     # PSI Change Preview panel (now with PsiTreeDiagram)
+        │   │   ├── PsiAgentToolWindowFactory.kt    # PSI Agent tool window registration
+        │   │   ├── PsiAgentDiagramPanel.kt         # Search & diagram UI for PSI Agent tool window
+        │   │   ├── PsiAgentClient.kt               # HTTP client for PSI agent endpoints
+        │   │   └── PsiAgentToolWindowFactory.kt    # Factory for creating tool window content
     │   └── visualization/PsiChangeVisualizer.kt  # Before/after PSI diff
+        │   └── PsiTreeDiagram.kt                   # Visual tree renderer with nodes and edges
     └── test/kotlin/.../refactoring/MethodRenamerTest.kt
 ```
 
 ## Building the Plugin
+
+### Quick Start: See the Visual Tree Diagram in Action
+
+1. **Build and run the IDE with the plugin:**
+```bash
+# Install Node dependencies (one-time)
+npm ci
+
+# Run the IDE with the plugin loaded
+./gradlew runIde
+```
+
+2. **Open or create a Java/Kotlin project in the IDE.**
+
+3. **Trigger a PSI refactoring:**
+   - Right-click on a method/class name and select "Rename Symbol (PSI Agent)"
+   - Or go to the PSI Agent tool window (View → Tool Windows → PSI Agent) to search for code and see the diagram
+
+4. **Observe the automatic UI:**
+   - The "PSI Change Preview" tool window will automatically appear on the right side.
+   - A tree diagram with nodes and connecting lines will render, showing the PSI structure that changed.
+   - Use View → Tree button to arrange nodes as a hierarchical tree; use Reset layout to restore the original layout.
+
+5. **Interact with the diagram:**
+   - Hover over nodes to see tooltips.
+   - Drag nodes to reposition them (layout will be preserved on refresh).
+   - The ASCII tree view at the bottom provides an alternative text representation.
+
+### Detailed Build Instructions
 
 ### Prerequisites
 - JDK 17+
@@ -74,6 +251,38 @@ npm ci
 # Smoke-test the MCP bridge against a mock backend
 npm run test:bridge
 ```
+
+---
+
+## Visual Tree Diagram Features
+
+### PSI Change Preview Tool Window
+
+When a refactoring is executed (success or failure), the **PSI Change Preview** tool window automatically appears with a visual tree diagram showing:
+
+- **Nodes**: Each node in the PSI tree is drawn as a rounded rectangle with the node name.
+- **Edges**: Lines connecting parent nodes to their children show the tree structure.
+- **Centered Layout**: Parents are automatically centered above their children for readability.
+- **Multiple Views**: Use the View selector to switch between:
+  - **Overview**: Summary of the refactoring (tool name, status, affected files).
+  - **Before PSI**: Tree of the code before refactoring.
+  - **After PSI**: Tree of the code after refactoring.
+  - **Affected Files**: List of files modified by the refactoring.
+- **ASCII Fallback**: A text-based tree view below the diagram for accessibility.
+
+### PSI Agent Tool Window
+
+The **PSI Agent** tool window (View → Tool Windows → PSI Agent) provides direct access to PSI search:
+
+- **Status Button**: Check if the HTTP agent server is online.
+- **Search Field**: Query the PSI database (methods, classes, fields, etc.).
+- **Diagram Canvas**: Results appear as interactive nodes that can be:
+  - **Dragged**: Reposition nodes with the mouse.
+  - **Tree Arranged**: Click "Tree" button to auto-layout as a binary tree.
+  - **Reset**: Click "Reset layout" to restore the original grid layout.
+- **Future**: Double-click to open files in the editor; right-click for context menu (rename, find usages, extract method).
+
+---
 
 ## Using the Shell Scripts (Agent Integration)
 
@@ -192,11 +401,30 @@ Introduces a local variable from a precisely selected Java or Kotlin expression.
 ### `MoveClassProcessor`
 Uses IntelliJ's move-class refactoring engine to move Java or Kotlin classes/objects to another package. The processor resolves or creates the target package directory, then lets IntelliJ update imports and references across the project.
 
+### `PsiTreeDiagram`
+Renders a `PsiTreePresentationNode` as an interactive, visual tree diagram with nodes and connecting edges. Features include:
+- **Node Layout**: Computes a top-down layout with parent nodes centered above their children.
+- **Drawing**: Rounded rectangular nodes with text labels, edges as lines.
+- **Status Colors**: Nodes can be colored by their change status for visualization of before/after diffs (not yet fully implemented, but framework is in place).
+
+### `PsiAgentToolWindowFactory` & `PsiAgentDiagramPanel`
+Creates a secondary tool window ("PSI Agent") in the IDE sidebar that allows direct interaction with the PSI agent HTTP server:
+- Search field to query PSI endpoints directly.
+- Canvas that renders search results as draggable nodes.
+- Tree and Reset layout buttons to switch between layout modes.
+- Status indicator showing if the agent is online.
+
+### `PsiAgentClient`
+HTTP client that communicates with the PSI agent server (`http://127.0.0.1:9742`). Reads the bearer token from `~/.psi-agent/token` and handles lenient JSON parsing of responses.
+
 ### `PsiCodeSearcher`
 Uses `PsiShortNamesCache` and `MethodReferencesSearch` for fast, index-backed searches that understand the code's type system (not just string matching).
 
 ### `PsiChangeVisualizer`
 Generates before/after snapshots of the affected PSI nodes and formats them as a human-readable diff and a JSON tree — useful for an AI agent to understand exactly what changed.
+
+### `PsiDiffService`
+Project-level service that publishes `PsiChangeRecord` events when refactorings complete. Now automatically shows the "PSI Change Preview" tool window when a change record is published, providing immediate visual feedback.
 
 ## AI Agent Integration
 
