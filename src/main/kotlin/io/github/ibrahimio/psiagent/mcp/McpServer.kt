@@ -20,6 +20,12 @@ import io.github.ibrahimio.psiagent.refactoring.IntroduceVariableProcessor
 import io.github.ibrahimio.psiagent.refactoring.IntroduceVariableResult
 import io.github.ibrahimio.psiagent.refactoring.MoveClassProcessor
 import io.github.ibrahimio.psiagent.refactoring.MoveClassResult
+import io.github.ibrahimio.psiagent.refactoring.CreateMethodProcessor
+import io.github.ibrahimio.psiagent.refactoring.CreateClassProcessor
+import io.github.ibrahimio.psiagent.refactoring.CreateFieldProcessor
+import io.github.ibrahimio.psiagent.refactoring.CreateMethodResult
+import io.github.ibrahimio.psiagent.refactoring.CreateClassResult
+import io.github.ibrahimio.psiagent.refactoring.CreateFieldResult
 import io.github.ibrahimio.psiagent.search.PsiCodeSearcher
 import io.github.ibrahimio.psiagent.visualization.PsiChangeRecord
 import io.github.ibrahimio.psiagent.visualization.PsiDiffService
@@ -64,6 +70,9 @@ class McpServer(private val project: Project) {
                 createContext("/api/find-usages") { handleFindUsages(it) }
                 createContext("/api/health") { handleHealth(it) }
                 createContext("/api/move-class") { handleMoveClass(it) }
+                createContext("/api/create-method") { handleCreateMethod(it) }
+                createContext("/api/create-class") { handleCreateClass(it) }
+                createContext("/api/create-field") { handleCreateField(it) }
 
                 start()
             }
@@ -113,9 +122,12 @@ class McpServer(private val project: Project) {
                 "psi_find_usages" -> executeFindUsages(exchange, params)
                 "psi_extract_method" -> executeExtractMethod(exchange, params)
                 "psi_move_class" -> executeMoveClass(exchange, params)
+                "psi_create_method" -> executeCreateMethod(exchange, params)
+                "psi_create_class" -> executeCreateClass(exchange, params)
+                "psi_create_field" -> executeCreateField(exchange, params)
                 else -> sendJson(exchange, 400, mapOf(
                     "error" to "Unknown tool: $toolName",
-                    "available" to listOf("psi_search", "psi_rename", "psi_inline_method", "psi_introduce_variable", "psi_delete_symbol", "psi_find_usages", "psi_extract_method", "psi_move_class")
+                    "available" to listOf("psi_search", "psi_rename", "psi_inline_method", "psi_introduce_variable", "psi_delete_symbol", "psi_find_usages", "psi_extract_method", "psi_move_class", "psi_create_method", "psi_create_class", "psi_create_field")
                 ))
             }
         } catch (e: Exception) {
@@ -212,6 +224,39 @@ class McpServer(private val project: Project) {
         val body = exchange.requestBody.bufferedReader().readText()
         val params = JsonParser.parseString(body).asJsonObject
         executeMoveClass(exchange, params)
+    }
+
+    private fun handleCreateMethod(exchange: HttpExchange) {
+        if (!requireAuth(exchange)) return
+        if (exchange.requestMethod != "POST") {
+            sendJson(exchange, 405, mapOf("error" to "POST required"))
+            return
+        }
+        val body = exchange.requestBody.bufferedReader().readText()
+        val params = JsonParser.parseString(body).asJsonObject
+        executeCreateMethod(exchange, params)
+    }
+
+    private fun handleCreateClass(exchange: HttpExchange) {
+        if (!requireAuth(exchange)) return
+        if (exchange.requestMethod != "POST") {
+            sendJson(exchange, 405, mapOf("error" to "POST required"))
+            return
+        }
+        val body = exchange.requestBody.bufferedReader().readText()
+        val params = JsonParser.parseString(body).asJsonObject
+        executeCreateClass(exchange, params)
+    }
+
+    private fun handleCreateField(exchange: HttpExchange) {
+        if (!requireAuth(exchange)) return
+        if (exchange.requestMethod != "POST") {
+            sendJson(exchange, 405, mapOf("error" to "POST required"))
+            return
+        }
+        val body = exchange.requestBody.bufferedReader().readText()
+        val params = JsonParser.parseString(body).asJsonObject
+        executeCreateField(exchange, params)
     }
 
     // ── Tool Execution Logic ───────────────────────────────────────────────
@@ -482,6 +527,127 @@ class McpServer(private val project: Project) {
         sendJson(exchange, 200, mapOf(
             "tool" to "psi_move_class",
             "result" to moveResult
+        ))
+    }
+
+    private fun executeCreateMethod(exchange: HttpExchange, params: JsonObject) {
+        val file = params.get("file")?.asString
+        val className = params.get("class_name")?.asString
+        val methodName = params.get("method_name")?.asString
+        val returnType = params.get("return_type")?.asString ?: "void"
+        val parameters = params.get("parameters")?.asString ?: ""
+        val methodBody = params.get("method_body")?.asString ?: ""
+        val isStatic = params.get("is_static")?.asBoolean ?: false
+        val visibility = params.get("visibility")?.asString ?: "public"
+
+        if (file.isNullOrBlank() || className.isNullOrBlank() || methodName.isNullOrBlank()) {
+            sendJson(exchange, 400, mapOf(
+                "error" to "Missing required parameters: file, class_name, method_name"
+            ))
+            return
+        }
+
+        val resolvedFile = if (file.startsWith("/") || file.contains(":")) {
+            file
+        } else {
+            "${project.basePath}/$file"
+        }
+
+        val beforeSnapshot = snapshotFile(resolvedFile)
+
+        var result: CreateMethodResult? = null
+        ApplicationManager.getApplication().invokeAndWait {
+            val creator = CreateMethodProcessor(project)
+            result = creator.createMethod(resolvedFile, className, methodName, returnType, parameters, methodBody, isStatic, visibility)
+        }
+
+        val createResult = result ?: return sendJson(exchange, 500, mapOf("error" to "Create-method did not return a result"))
+        val afterSnapshot = snapshotFile(resolvedFile)
+        publishPsiChange("psi_create_method", resolvedFile, beforeSnapshot, afterSnapshot, createResult.success, createResult.message, createResult.affectedFiles)
+
+        sendJson(exchange, 200, mapOf(
+            "tool" to "psi_create_method",
+            "result" to createResult
+        ))
+    }
+
+    private fun executeCreateClass(exchange: HttpExchange, params: JsonObject) {
+        val file = params.get("file")?.asString
+        val packageName = params.get("package_name")?.asString ?: ""
+        val className = params.get("class_name")?.asString
+        val extends = params.get("extends")?.asString ?: ""
+        val isInterface = params.get("is_interface")?.asBoolean ?: false
+        val isKotlin = file?.endsWith(".kt") ?: false
+
+        if (file.isNullOrBlank() || className.isNullOrBlank()) {
+            sendJson(exchange, 400, mapOf(
+                "error" to "Missing required parameters: file, class_name"
+            ))
+            return
+        }
+
+        val resolvedFile = if (file.startsWith("/") || file.contains(":")) {
+            file
+        } else {
+            "${project.basePath}/$file"
+        }
+
+        val beforeSnapshot = snapshotFile(resolvedFile)
+
+        var result: CreateClassResult? = null
+        ApplicationManager.getApplication().invokeAndWait {
+            val creator = CreateClassProcessor(project)
+            result = creator.createClass(resolvedFile, packageName, className, extends, isInterface, isKotlin)
+        }
+
+        val createResult = result ?: return sendJson(exchange, 500, mapOf("error" to "Create-class did not return a result"))
+        val afterSnapshot = snapshotFile(resolvedFile)
+        publishPsiChange("psi_create_class", resolvedFile, beforeSnapshot, afterSnapshot, createResult.success, createResult.message, createResult.affectedFiles)
+
+        sendJson(exchange, 200, mapOf(
+            "tool" to "psi_create_class",
+            "result" to createResult
+        ))
+    }
+
+    private fun executeCreateField(exchange: HttpExchange, params: JsonObject) {
+        val file = params.get("file")?.asString
+        val className = params.get("class_name")?.asString
+        val fieldName = params.get("field_name")?.asString
+        val fieldType = params.get("field_type")?.asString
+        val initialValue = params.get("initial_value")?.asString ?: ""
+        val visibility = params.get("visibility")?.asString ?: "private"
+        val isStatic = params.get("is_static")?.asBoolean ?: false
+        val isFinal = params.get("is_final")?.asBoolean ?: false
+
+        if (file.isNullOrBlank() || className.isNullOrBlank() || fieldName.isNullOrBlank() || fieldType.isNullOrBlank()) {
+            sendJson(exchange, 400, mapOf(
+                "error" to "Missing required parameters: file, class_name, field_name, field_type"
+            ))
+            return
+        }
+
+        val resolvedFile = if (file.startsWith("/") || file.contains(":")) {
+            file
+        } else {
+            "${project.basePath}/$file"
+        }
+
+        val beforeSnapshot = snapshotFile(resolvedFile)
+
+        var result: CreateFieldResult? = null
+        ApplicationManager.getApplication().invokeAndWait {
+            val creator = CreateFieldProcessor(project)
+            result = creator.createField(resolvedFile, className, fieldName, fieldType, initialValue, visibility, isStatic, isFinal)
+        }
+
+        val createResult = result ?: return sendJson(exchange, 500, mapOf("error" to "Create-field did not return a result"))
+        val afterSnapshot = snapshotFile(resolvedFile)
+        publishPsiChange("psi_create_field", resolvedFile, beforeSnapshot, afterSnapshot, createResult.success, createResult.message, createResult.affectedFiles)
+
+        sendJson(exchange, 200, mapOf(
+            "tool" to "psi_create_field",
+            "result" to createResult
         ))
     }
 

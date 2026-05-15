@@ -172,6 +172,122 @@ object McpToolDefinitions {
                 ),
                 "required" to listOf("file", "target_package")
             )
+        ),
+        mapOf(
+            "name" to "psi_create_method",
+            "description" to "Create a new method in a Java or Kotlin class. Generates method stub with placeholder or custom body.",
+            "inputSchema" to mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "file" to mapOf(
+                        "type" to "string",
+                        "description" to "Path to the file containing the target class"
+                    ),
+                    "class_name" to mapOf(
+                        "type" to "string",
+                        "description" to "Name of the class where the method will be added"
+                    ),
+                    "method_name" to mapOf(
+                        "type" to "string",
+                        "description" to "Name for the new method"
+                    ),
+                    "return_type" to mapOf(
+                        "type" to "string",
+                        "description" to "Return type (e.g., 'void', 'String', 'int'). Default: void"
+                    ),
+                    "parameters" to mapOf(
+                        "type" to "string",
+                        "description" to "Comma-separated parameter list (e.g., 'String name, int age'). Default: empty"
+                    ),
+                    "method_body" to mapOf(
+                        "type" to "string",
+                        "description" to "Optional method body. If empty, generates a placeholder TODO comment"
+                    ),
+                    "is_static" to mapOf(
+                        "type" to "boolean",
+                        "description" to "If true, method is marked as static. Default: false"
+                    ),
+                    "visibility" to mapOf(
+                        "type" to "string",
+                        "enum" to listOf("public", "protected", "private"),
+                        "description" to "Access level. Default: public"
+                    )
+                ),
+                "required" to listOf("file", "class_name", "method_name")
+            )
+        ),
+        mapOf(
+            "name" to "psi_create_class",
+            "description" to "Create a new class or interface in a file. Generates class stub with optional package declaration.",
+            "inputSchema" to mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "file" to mapOf(
+                        "type" to "string",
+                        "description" to "Path to the file where the class will be added"
+                    ),
+                    "package_name" to mapOf(
+                        "type" to "string",
+                        "description" to "Package name for the new class (e.g., 'com.example'). Default: empty"
+                    ),
+                    "class_name" to mapOf(
+                        "type" to "string",
+                        "description" to "Name for the new class"
+                    ),
+                    "extends" to mapOf(
+                        "type" to "string",
+                        "description" to "Optional parent class to extend (e.g., 'BaseClass'). Default: empty"
+                    ),
+                    "is_interface" to mapOf(
+                        "type" to "boolean",
+                        "description" to "If true, creates an interface instead of a class. Default: false"
+                    )
+                ),
+                "required" to listOf("file", "class_name")
+            )
+        ),
+        mapOf(
+            "name" to "psi_create_field",
+            "description" to "Create a new field in a Java or Kotlin class. Generates field with optional initialization.",
+            "inputSchema" to mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "file" to mapOf(
+                        "type" to "string",
+                        "description" to "Path to the file containing the target class"
+                    ),
+                    "class_name" to mapOf(
+                        "type" to "string",
+                        "description" to "Name of the class where the field will be added"
+                    ),
+                    "field_name" to mapOf(
+                        "type" to "string",
+                        "description" to "Name for the new field"
+                    ),
+                    "field_type" to mapOf(
+                        "type" to "string",
+                        "description" to "Type of the field (e.g., 'String', 'int', 'List<String>')"
+                    ),
+                    "initial_value" to mapOf(
+                        "type" to "string",
+                        "description" to "Optional initial value (e.g., 'null', '0', 'new ArrayList<>()'). Default: empty"
+                    ),
+                    "visibility" to mapOf(
+                        "type" to "string",
+                        "enum" to listOf("public", "protected", "private", "internal"),
+                        "description" to "Access level. Default: private"
+                    ),
+                    "is_static" to mapOf(
+                        "type" to "boolean",
+                        "description" to "If true, field is marked as static. Default: false"
+                    ),
+                    "is_final" to mapOf(
+                        "type" to "boolean",
+                        "description" to "If true, field is marked as final. Default: false"
+                    )
+                ),
+                "required" to listOf("file", "class_name", "field_name", "field_type")
+            )
         )
     )
 }

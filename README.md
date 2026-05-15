@@ -482,6 +482,24 @@ curl -X POST http://127.0.0.1:9742/api/find-usages \
   -H "Authorization: Bearer <token>" \
   -d '{"method_name": "processOrder"}'
 
+# Create a new method in a class
+curl -X POST http://127.0.0.1:9742/api/create-method \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"file": "src/main/java/Calculator.java", "class_name": "Calculator", "method_name": "add", "return_type": "int", "parameters": "int a, int b", "visibility": "public"}'
+
+# Create a new class
+curl -X POST http://127.0.0.1:9742/api/create-class \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"file": "src/main/java/NewClass.java", "package_name": "com.example", "class_name": "MyService", "extends": ""}'
+
+# Create a new field in a class
+curl -X POST http://127.0.0.1:9742/api/create-field \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"file": "src/main/java/Calculator.java", "class_name": "Calculator", "field_name": "precision", "field_type": "int", "initial_value": "2", "visibility": "private"}'
+
 # MCP tool discovery (for MCP-compatible agents)
 curl -H "Authorization: Bearer <token>" http://127.0.0.1:9742/mcp/tools/list
 ```
